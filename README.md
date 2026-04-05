@@ -97,7 +97,7 @@ OPENROUTER_MODEL=openai/gpt-4o-mini
 OPENROUTER_EMBEDDING_MODEL=openai/text-embedding-3-small
 ```
 
-> Get your API key at: https://platform.openai.com/api-keys
+> Get your API key at: https://openrouter.ai/
 
 ### Step 4: Run the Backend (Terminal 1)
 
