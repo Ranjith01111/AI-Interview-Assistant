@@ -11,11 +11,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 if __name__ == "__main__":
     print("=" * 55)
-    print("  🚀 AI Interview Assistant - Backend Server")
+    print("  [Server] AI Interview Assistant - Backend Server")
     print("=" * 55)
-    print("  📡 API URL:   http://localhost:8000")
-    print("  📚 API Docs:  http://localhost:8000/docs") 
-    print("  🔍 ReDoc:     http://localhost:8000/redoc")
+    print("  [API] API URL:   http://localhost:8000")
+    print("  [Docs] API Docs:  http://localhost:8000/docs") 
+    print("  [Docs] ReDoc:     http://localhost:8000/redoc")
     print("=" * 55)
     print()
     

@@ -1,9 +1,10 @@
 """
-Resume Router - Handles PDF upload and processing endpoints.
+Resume Router — Handles PDF upload and processing endpoints.
 """
 
-from fastapi import APIRouter, File, UploadFile, HTTPException
+from fastapi import APIRouter, Depends, File, UploadFile, HTTPException
 from fastapi.responses import JSONResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
 try:
     from openai import AuthenticationError, RateLimitError
@@ -11,27 +12,36 @@ except ImportError:
     AuthenticationError = Exception
     RateLimitError = Exception
 
+from backend.db.session import get_db
 from backend.models.schemas import ResumeUploadResponse
 from backend.services.resume_service import process_resume
+from backend.core.security import get_current_active_user
+from backend.models.user import User
 
 # Create router with /resume prefix
 router = APIRouter(prefix="/resume", tags=["Resume"])
 
 
 @router.post("/upload", response_model=ResumeUploadResponse)
-async def upload_resume(file: UploadFile = File(...)):
+async def upload_resume(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
     """
     Upload a PDF resume for processing.
-    
+
     Steps:
     1. Validate file is a PDF
     2. Parse text from PDF
     3. Create embeddings and store in FAISS
-    4. Return session ID for subsequent requests
-    
+    4. Persist session to PostgreSQL + Redis
+    5. Return session ID for subsequent requests
+
     Args:
         file: The uploaded PDF file
-        
+        db: Async database session (injected)
+
     Returns:
         ResumeUploadResponse with session_id and detected metadata
     """
@@ -41,7 +51,7 @@ async def upload_resume(file: UploadFile = File(...)):
             status_code=400,
             detail="Only PDF files are supported. Please upload a .pdf file."
         )
-    
+
     # Check file size (max 10MB)
     file_bytes = await file.read()
     if len(file_bytes) > 10 * 1024 * 1024:
@@ -49,17 +59,17 @@ async def upload_resume(file: UploadFile = File(...)):
             status_code=400,
             detail="File too large. Maximum size is 10MB."
         )
-    
+
     if len(file_bytes) == 0:
         raise HTTPException(
             status_code=400,
             detail="Uploaded file is empty."
         )
-    
+
     try:
-        # Process the resume (parse + embed + store)
-        session_id, metadata = process_resume(file_bytes)
-        
+        # Process the resume (parse + embed + store in DB/Redis)
+        session_id, metadata = await process_resume(file_bytes, db, user_id=current_user.id)
+
         return ResumeUploadResponse(
             success=True,
             message=f"Resume processed successfully! Session created for {metadata['candidate_name']}.",
@@ -68,7 +78,7 @@ async def upload_resume(file: UploadFile = File(...)):
             skills_detected=metadata["skills_detected"],
             experience_years=metadata["experience_years"],
         )
-        
+
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except RateLimitError as e:

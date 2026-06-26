@@ -1,10 +1,10 @@
 """
-Services package initializer
+Services package — business logic layer.
+
+Services orchestrate:
+  • Resume processing (PDF → FAISS → DB)
+  • Question generation (LangChain RAG → DB)
+  • Interview Agent (LangChain GPT-4o — memory, follow-ups, scoring)
+  • Interview chat (Agent-powered conversation → DB)
+  • Session management (Redis cache)
 """
-from .resume_service import process_resume
-from .question_service import generate_questions
-from .interview_service import (
-    start_interview,
-    process_interview_message,
-    generate_final_summary,
-)

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="AI Interview Assistant — Intelligent mock interview platform with AI proctoring, voice interviews, and coding assessments." />
+  <meta name="theme-color" content="#0c0d0f" />
+  <title>AI Interview Assistant</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>" />
+</head>
+<body>
+  <div id="app">
+    <!-- App shell — JS renders everything here -->
+    <div id="loading-screen" style="
+      position:fixed; inset:0;
+      background: #0c0d0f;
+      display:flex; align-items:center; justify-content:center;
+      flex-direction:column; gap:16px;
+      font-family:'Inter',sans-serif; color:#f5b800;
+    ">
+      <div style="font-size:48px;">⚡</div>
+      <div style="font-size:18px; font-weight:600; letter-spacing:0.5px;">AI Interview Assistant</div>
+      <div style="width:200px; height:3px; background:#2a2720; border-radius:2px; overflow:hidden; margin-top:8px;">
+        <div id="load-bar" style="height:100%; width:0%; background:linear-gradient(90deg,#f5b800,#ff8c00); border-radius:2px; transition:width 0.3s ease;"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Animate loading bar
+    let w = 0;
+    const bar = document.getElementById('load-bar');
+    const iv = setInterval(() => { w = Math.min(w + 15, 85); bar.style.width = w + '%'; }, 100);
+    window.__stopLoader = () => { clearInterval(iv); bar.style.width = '100%'; setTimeout(() => { document.getElementById('loading-screen')?.remove(); }, 300); };
+  </script>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

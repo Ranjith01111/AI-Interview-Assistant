@@ -1,5 +1,6 @@
 # ============================================
 # AI Interview Assistant - Dependencies
+# Production-Ready v2.0
 # ============================================
 
 # Backend Framework
@@ -19,6 +20,8 @@ pypdf==4.2.0
 # Data Validation
 pydantic==2.7.4
 pydantic-settings==2.3.4
+# TTS for voice interview
+edge-tts==6.1.12
 
 # Frontend
 streamlit==1.36.0
@@ -36,3 +39,44 @@ python-multipart==0.0.9
 # Utilities
 tiktoken==0.7.0
 numpy==1.26.4
+
+# ============================================
+# NEW — Production Infrastructure
+# ============================================
+
+# Database (PostgreSQL + Async)
+sqlalchemy[asyncio]==2.0.31
+asyncpg==0.29.0
+
+# Migrations
+alembic==1.13.1
+
+# Redis (Async)
+redis[hiredis]==5.0.7
+
+# Async file handling
+aiofiles==24.1.0
+
+# Structured Logging
+structlog==24.4.0
+
+# ============================================
+# Authentication & Security
+# ============================================
+
+# JWT Token handling
+PyJWT==2.9.0
+
+# Password hashing (bcrypt)
+bcrypt==4.2.0
+
+# JOSE / JWS support (FastAPI Security integration)
+python-jose[cryptography]==3.3.0
+
+# Rate limiting middleware
+slowapi==0.1.9
+
+# AI Proctoring System Dependencies
+opencv-python-headless==4.9.0.80
+mediapipe==0.10.13
+
