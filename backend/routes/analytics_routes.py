@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, desc
 from typing import List, Dict, Any, Optional
+from fastapi import Query
 from datetime import datetime
 
 from backend.db.session import get_db
@@ -14,6 +15,7 @@ from backend.models.interview import InterviewSession
 from backend.models.answer import Answer as AnswerORM
 from backend.models.proctor_log import ProctorLog as ProctorLogORM
 from backend.core.security import get_current_active_user
+from backend.models.user import User
 from backend.core.logging import get_logger
 
 logger = get_logger("backend.routes.analytics")
@@ -99,16 +101,23 @@ async def get_analytics_overview(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/history")
-async def get_interview_history(db: AsyncSession = Depends(get_db)):
+async def get_interview_history(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
     """
     Get a list of past interview sessions.
+    Candidates see only their own; recruiters/admins see all.
     """
     try:
-        # Simple query without join first
         query = (
             select(InterviewSession)
             .order_by(InterviewSession.created_at.desc())
         )
+
+        # Candidates only see their own sessions
+        if current_user.role == "candidate":
+            query = query.where(InterviewSession.user_id == current_user.id)
 
         result = await db.execute(query)
         sessions = result.scalars().all()

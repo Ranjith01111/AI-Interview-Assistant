@@ -115,12 +115,14 @@ export async function renderStep3(container, state, onNext, onForceEnd) {
     modeText.classList.add('active'); modeVoice.classList.remove('active');
     textArea.style.display = ''; voiceArea.style.display = 'none';
     voice?.destroy(); voice = null;
+    proctor?.resumeVoiceDetection();
   };
   modeVoice.onclick = () => {
     modeVoice.classList.add('active'); modeText.classList.remove('active');
     voiceArea.style.display = ''; textArea.style.display = 'none';
     voice = new VoiceConsole(state.sessionId, handleVoiceMessage);
     voiceArea.appendChild(voice.render());
+    proctor?.pauseVoiceDetection();
   };
 
   /* Submit button — only shows after all questions answered */
@@ -232,8 +234,16 @@ export async function renderStep3(container, state, onNext, onForceEnd) {
     container.querySelector('#q-fraction').textContent = `${qNum} / ${t} answered`;
   }
 
+  function escapeHtml(str) {
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
   function formatText(text) {
-    return text
+    return escapeHtml(text)
       .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
       .replace(/\n/g, '<br>');
   }

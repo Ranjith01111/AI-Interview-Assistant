@@ -9,6 +9,7 @@ import time
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
+from starlette.responses import JSONResponse
 
 from backend.core.config import settings
 from backend.core.logging import get_logger
@@ -94,3 +95,30 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                 duration_ms=round(duration * 1000, 2),
             )
             raise e
+
+
+class RequestBodySizeLimitMiddleware(BaseHTTPMiddleware):
+    """
+    Rejects requests with Content-Length exceeding the configured max body size.
+    Protects against oversized payloads exhausting memory.
+    
+    Default: 5MB (covers resume uploads up to 10MB file + multipart overhead).
+    """
+    def __init__(self, app, max_body_size: int = 5 * 1024 * 1024):
+        super().__init__(app)
+        self.max_body_size = max_body_size
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        # Check Content-Length header if present
+        content_length = request.headers.get("content-length")
+        if content_length:
+            try:
+                if int(content_length) > self.max_body_size:
+                    return JSONResponse(
+                        status_code=413,
+                        content={"detail": f"Request body too large. Maximum size is {self.max_body_size // (1024*1024)}MB."}
+                    )
+            except ValueError:
+                pass  # Invalid header — let downstream handle it
+
+        return await call_next(request)

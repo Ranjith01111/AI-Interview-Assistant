@@ -85,15 +85,21 @@ export async function renderCandidateDashboard(container) {
   /* Three-dot menu toggle */
   const threeBtn = main.querySelector('#three-dot-btn');
   const popup = main.querySelector('#three-dot-popup');
+  const _closePopupHandler = (e) => {
+    if (!popup.contains(e.target) && e.target !== threeBtn) popup.style.display = 'none';
+  };
   threeBtn.onclick = (e) => {
     e.stopPropagation();
     popup.style.display = popup.style.display === 'none' ? 'block' : 'none';
     if (popup.style.display === 'block') loadRecentSessions();
   };
   main.querySelector('#popup-close').onclick = () => { popup.style.display = 'none'; };
-  document.addEventListener('click', (e) => {
-    if (!popup.contains(e.target) && e.target !== threeBtn) popup.style.display = 'none';
-  });
+  document.addEventListener('click', _closePopupHandler);
+
+  /* Cleanup listener on navigation (called by hash change) */
+  container._cleanup = () => {
+    document.removeEventListener('click', _closePopupHandler);
+  };
 
   /* Load recent sessions into popup */
   async function loadRecentSessions() {
@@ -101,23 +107,29 @@ export async function renderCandidateDashboard(container) {
     try {
       const history = await analytics.history();
       const sessions = history?.sessions || history || [];
-      if (!sessions.length) {
-        listEl.innerHTML = `<div style="text-align:center;padding:16px;color:var(--text-muted);font-size:0.85rem">No sessions yet</div>`;
+      const completedSessions = sessions.filter(s => s.status === 'completed');
+      if (!completedSessions.length) {
+        listEl.innerHTML = `<div style="text-align:center;padding:16px;color:var(--text-muted);font-size:0.85rem">No completed sessions yet</div>`;
         return;
       }
       listEl.innerHTML = '';
-      sessions.slice(0, 10).forEach(s => {
-        const score = s.average_score ?? 0;
+      completedSessions.slice(0, 10).forEach(s => {
+        const score = s.average_score;
+        const hasScore = score !== null && score !== undefined;
+        const scoreVal = hasScore ? Number(score) : 0;
         const date = s.created_at ? new Date(s.created_at).toLocaleDateString('en-GB', { day:'numeric', month:'short' }) : '—';
-        const status = s.status || 'pending';
+        const recommendation = s.recommendation || 'Completed';
+        const recColor = recommendation.toLowerCase().includes('strong') ? 'badge-emerald' :
+                          recommendation.toLowerCase().includes('no') ? 'badge-red' :
+                          recommendation.toLowerCase().includes('hire') ? 'badge-amber' : 'badge-emerald';
         const item = document.createElement('div');
         item.className = 'recent-session-item';
         item.innerHTML = `
           <div class="rs-info">
             <span class="rs-date">${date}</span>
-            <span class="rs-status badge ${status === 'completed' ? 'badge-emerald' : 'badge-gray'}">${status}</span>
+            <span class="rs-status badge ${recColor}">${recommendation}</span>
           </div>
-          <span class="rs-score" style="color:${score >= 7 ? 'var(--accent-emerald)' : score >= 5 ? 'var(--accent-amber)' : 'var(--accent-red)'}">${score > 0 ? score.toFixed(1) : '—'}</span>
+          <span class="rs-score" style="color:${scoreVal >= 7 ? 'var(--accent-emerald)' : scoreVal >= 5 ? 'var(--accent-amber)' : 'var(--text-muted)'}">${hasScore ? scoreVal.toFixed(1) + '/10' : 'View →'}</span>
         `;
         item.onclick = () => navigate(`/interview/summary/${s.session_id}`);
         listEl.appendChild(item);

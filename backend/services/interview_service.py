@@ -181,6 +181,29 @@ async def generate_final_summary_endpoint(
             total_questions=len(all_feedback),
         )
 
+    # ── Persist summary to database ──────────────────────────────────────
+    try:
+        result_row = await db.execute(
+            select(InterviewSession).where(InterviewSession.id == session_uuid)
+        )
+        db_session = result_row.scalar_one_or_none()
+        if db_session:
+            # Save recommendation and overall feedback
+            if summary_data.get("recommendation"):
+                db_session.recommendation = summary_data["recommendation"]
+            if summary_data.get("overall_feedback"):
+                db_session.overall_feedback = summary_data["overall_feedback"]
+            # Also save average_score if present and not already set
+            if summary_data.get("average_score") is not None and db_session.average_score is None:
+                db_session.average_score = summary_data["average_score"]
+            # Ensure status is completed
+            if db_session.status != SessionStatus.COMPLETED.value:
+                db_session.status = SessionStatus.COMPLETED.value
+            await db.commit()
+            logger.info("summary_persisted_to_db", session_id=session_id)
+    except Exception as e:
+        logger.error("failed_to_persist_summary", session_id=session_id, error=str(e))
+
     # Add success flag
     summary_data["success"] = True
     summary_data["session_id"] = session_id

@@ -27,6 +27,7 @@ export class ProctorMonitor {
     this._audioInterval = null;
     this._audioStream = null;
     this._lastSoundAlert = 0; // cooldown timestamp
+    this._voiceDetectionPaused = false; // pause during voice input mode
   }
 
   async mount(parentEl) {
@@ -180,7 +181,7 @@ export class ProctorMonitor {
   }
 
   _checkAudioLevel() {
-    if (!this._audioAnalyser || this._sessionEnded) return;
+    if (!this._audioAnalyser || this._sessionEnded || this._voiceDetectionPaused) return;
 
     const dataArray = new Uint8Array(this._audioAnalyser.frequencyBinCount);
     this._audioAnalyser.getByteFrequencyData(dataArray);
@@ -211,6 +212,25 @@ export class ProctorMonitor {
         this._addViolationEntry(`Voice detected (${this._voiceViolationCount}/3)`);
       }
     }
+  }
+
+  /**
+   * Pause voice/sound detection — call when candidate is using voice input mode.
+   * This prevents false violations while the candidate is speaking into the mic.
+   */
+  pauseVoiceDetection() {
+    this._voiceDetectionPaused = true;
+    const statusText = this.el?.querySelector('#proctor-status-text');
+    if (statusText) statusText.textContent = 'Monitoring (voice mode)';
+  }
+
+  /**
+   * Resume voice/sound detection — call when candidate switches back to text mode.
+   */
+  resumeVoiceDetection() {
+    this._voiceDetectionPaused = false;
+    const statusText = this.el?.querySelector('#proctor-status-text');
+    if (statusText) statusText.textContent = 'Monitoring';
   }
 
   _startAnalysis() {

@@ -5,6 +5,7 @@
 import { renderNavbar } from '../components/Navbar.js';
 import { Toast } from '../components/Toast.js';
 import { navigate } from '../main.js';
+import { interview } from '../api/index.js';
 
 const QS = [
   { p:"Self-Intro", q:"Tell me about yourself and your professional background.", ex:["name","experience","skills","education","role"], m:"I'm [Name], a [role] with [X] years in [field]. I studied at [university]. Currently at [company]. My core skills are [skills]." },
@@ -211,6 +212,7 @@ export async function renderVoiceInterview(container) {
     st.textContent='Call Ended'; sub.textContent='';
     endb.style.display='none'; hrbox.style.display='none'; youbox.style.display='none';
     buildReport();
+    saveVoiceResultsToBackend();
   }
 
   // ══════════════════════════════════════════════════════════════
@@ -266,6 +268,15 @@ export async function renderVoiceInterview(container) {
   // ══════════════════════════════════════════════════════════════
   // REPORT
   // ══════════════════════════════════════════════════════════════
+  function escapeHtml(str) {
+    if (!str) return '';
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
   function buildReport() {
     const rpt=main.querySelector('#rpt'); rpt.style.display='';
     const ok=results.filter(r=>r.ok), skip=results.filter(r=>!r.ok);
@@ -284,10 +295,10 @@ export async function renderVoiceInterview(container) {
     const cards=results.map((r,i)=>{
       if(!r.ok) return `<div class="card" style="padding:10px;margin-bottom:8px;opacity:.5;border-left:3px solid var(--accent-red)"><span style="font-size:.75rem">Q${i+1}: ${r.p}</span><span style="float:right;color:var(--accent-red);font-size:.72rem;font-weight:600">SKIPPED</span></div>`;
       const e=r.ev, col=e.ov>=8?'var(--accent-emerald)':e.ov>=6?'var(--accent-gold)':e.ov>=4?'var(--accent-amber)':'var(--accent-red)';
-      const sfHtml=(e.sf||[]).map(x=>`<div style="padding:3px 0;font-size:.72rem;border-bottom:1px dashed rgba(255,255,255,.05)"><div style="color:var(--text-secondary)">"${x.s}"</div><div style="color:${x.t.startsWith('✓')?'var(--accent-emerald)':'var(--accent-amber)'}">→ ${x.t}</div></div>`).join('');
+      const sfHtml=(e.sf||[]).map(x=>`<div style="padding:3px 0;font-size:.72rem;border-bottom:1px dashed rgba(255,255,255,.05)"><div style="color:var(--text-secondary)">"${escapeHtml(x.s)}"</div><div style="color:${x.t.startsWith('✓')?'var(--accent-emerald)':'var(--accent-amber)'}">→ ${escapeHtml(x.t)}</div></div>`).join('');
       return `<div class="card" style="padding:12px;margin-bottom:8px;border-left:3px solid ${col}">
         <div style="display:flex;justify-content:space-between;margin-bottom:5px"><span style="font-size:.75rem;font-weight:600;color:var(--text-muted)">Q${i+1}: ${r.p}</span><span style="font-weight:700;color:${col}">${e.ov}/10</span></div>
-        <div style="font-size:.78rem;background:var(--bg-tertiary);padding:7px;border-radius:5px;margin-bottom:7px;color:var(--text-secondary);font-style:italic">"${r.a.slice(0,180)}${r.a.length>180?'...':''}"</div>
+        <div style="font-size:.78rem;background:var(--bg-tertiary);padding:7px;border-radius:5px;margin-bottom:7px;color:var(--text-secondary);font-style:italic">"${escapeHtml(r.a.slice(0,180))}${r.a.length>180?'...':''}"</div>
         <div style="display:flex;gap:4px;flex-wrap:wrap;font-size:.6rem;margin-bottom:6px">
           <span style="padding:2px 4px;border-radius:3px;background:rgba(255,255,255,.05)">Gr:${e.gram}</span>
           <span style="padding:2px 4px;border-radius:3px;background:rgba(255,255,255,.05)">Vc:${e.voc}</span>
@@ -335,5 +346,37 @@ export async function renderVoiceInterview(container) {
       </div>
       <div style="text-align:center;padding-bottom:30px"><button class="btn btn-primary btn-lg" id="hb">← Back to Home</button></div>`;
     rpt.querySelector('#hb').onclick=()=>navigate('/dashboard');
+  }
+
+  async function saveVoiceResultsToBackend() {
+    // Only save if we have answered questions
+    const answered = results.filter(r => r.ok);
+    if (!answered.length) return;
+
+    const payload = {
+      results: answered.map(r => ({
+        question: r.q,
+        category: r.p,
+        answer: r.a,
+        score: r.ev?.ov || 0,
+        keywords_matched: (r.ev?.sf || []).filter(x => x.t.startsWith('✓')).map(x => x.s),
+        feedback: (r.ev?.sf || []).filter(x => !x.t.startsWith('✓')).map(x => x.t).join('; ') || null,
+      })),
+      average_score: answered.reduce((sum, r) => sum + (r.ev?.ov || 0), 0) / answered.length,
+      total_questions: QS.length,
+      answered_questions: answered.length,
+      skipped_questions: results.filter(r => !r.ok).length,
+    };
+
+    try {
+      const resp = await interview.saveVoiceSession(payload);
+      if (resp.success) {
+        Toast.success(`Session saved! Score: ${payload.average_score.toFixed(1)}/10`, 'Saved');
+      }
+    } catch (err) {
+      // Don't block UX on save failure — results are shown locally
+      console.error('Failed to save voice session:', err);
+      Toast.warning('Could not save session to server. Results shown locally only.', 'Save Failed');
+    }
   }
 }

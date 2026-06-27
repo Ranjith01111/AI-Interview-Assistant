@@ -1,0 +1,3 @@
+# This directory is for additional nginx server blocks.
+# The main nginx.conf handles all routing.
+# Add per-domain or feature-specific configs here if needed.

@@ -147,7 +147,7 @@ async def get_me(
 )
 async def list_users(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.ADMIN)),
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.RECRUITER)),
 ):
     """
     Admin-only endpoint to retrieve all registered accounts on the platform.
@@ -177,7 +177,7 @@ async def deactivate_user(
     request: Request,
     user_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.ADMIN)),
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.RECRUITER)),
 ):
     """
     Admin-only endpoint to soft-delete/deactivate a user.
@@ -197,6 +197,13 @@ async def deactivate_user(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="The requested user account was not found.",
+        )
+
+    # SECURITY: Prevent privilege escalation — recruiters cannot deactivate admins
+    if current_user.role == UserRole.RECRUITER.value and target_user.role == UserRole.ADMIN.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Recruiters cannot deactivate admin accounts. Only admins can manage other admins.",
         )
 
     if not target_user.is_active:

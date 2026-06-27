@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/version-2.0.0-gold?style=for-the-badge)
+![Version](https://img.shields.io/badge/version-2.1.0-gold?style=for-the-badge)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?style=for-the-badge&logo=fastapi)
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791?style=for-the-badge&logo=postgresql)
@@ -10,9 +10,9 @@
 ![Vite](https://img.shields.io/badge/Vite-5-646CFF?style=for-the-badge&logo=vite)
 ![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)
 
-**An enterprise-grade, AI-powered mock interview platform with real-time proctoring, voice interviews, coding assessments, and recruiter analytics — powered by GPT-4o and LangChain.**
+**An enterprise-grade, AI-powered mock interview platform with real-time proctoring, voice interviews, coding assessments, and recruiter analytics — fully self-contained with a custom NLP engine.**
 
-[Features](#-features) · [Architecture](#-architecture) · [Quick Start](#-quick-start) · [API Docs](#-api-reference) · [Project Structure](#-project-structure)
+[Features](#-features) · [Architecture](#️-architecture) · [Quick Start](#-quick-start) · [API Docs](#-api-reference) · [Project Structure](#-project-structure)
 
 </div>
 
@@ -22,8 +22,9 @@
 
 - [Overview](#-overview)
 - [Features](#-features)
-- [Tech Stack](#-tech-stack)
-- [Architecture](#-architecture)
+- [AI & NLP Engine](#-ai--nlp-engine)
+- [Tech Stack](#️-tech-stack)
+- [Architecture](#️-architecture)
 - [Quick Start](#-quick-start)
 - [Environment Variables](#-environment-variables)
 - [API Reference](#-api-reference)
@@ -34,9 +35,23 @@
 
 ## 🌟 Overview
 
-**AI Interview Assistant** is a full-stack, production-ready mock interview platform that leverages Large Language Models (LLMs) to simulate realistic technical interviews. Candidates upload their resume, the AI parses it to generate tailored questions, then conducts a conversational interview with real-time feedback, scoring, and a comprehensive final report.
+**AI Interview Assistant** is a full-stack, production-ready mock interview platform that uses a **custom-built NLP engine** to simulate realistic technical interviews. Candidates upload their resume, the system parses it to generate tailored questions, then conducts a conversational interview with real-time feedback, scoring, and a comprehensive final report.
 
-The platform supports **text interviews**, **voice interviews**, **live coding assessments**, and **AI-driven proctoring** — making it suitable for both individual candidate practice and enterprise recruitment pipelines.
+### Key Differentiator: **Zero External API Dependency**
+
+Unlike typical AI interview tools that rely on expensive cloud APIs (OpenAI, Anthropic, etc.), this platform runs **100% offline** with:
+- ✅ No API keys required
+- ✅ Zero cost per interview
+- ✅ Complete data privacy (everything stays local)
+- ✅ Instant response times (no network latency)
+- ✅ Works without internet
+
+The platform supports **text interviews**, **voice interviews**, **live coding assessments**, and **AI-driven proctoring** — suitable for both individual candidate practice and enterprise recruitment pipelines.
+
+### 🚀 Recent Updates (v2.1.1)
+- **Recruiter Registration Fixed**: Resolved backend schema and pycache issues preventing the successful creation of recruiter accounts.
+- **Offline NLP Engine Summaries**: Updated the frontend and backend integration so candidate session Q&As correctly parse the offline agent's updated `score_breakdown` schema, restoring the Session Summary reports.
+- **Dashboard Data Integrity**: Corrected frontend state logic to correctly render valid `0.0` scores rather than defaulting to empty dashes.
 
 ---
 
@@ -46,21 +61,23 @@ The platform supports **text interviews**, **voice interviews**, **live coding a
 
 | Feature | Description |
 |---|---|
-| **Resume Upload & Parsing** | Upload PDF resumes; AI extracts skills, projects, and experience to craft personalised questions |
-| **AI-Powered Interviews** | GPT-4o conducts realistic interviews with context-aware, memory-backed conversational flow |
-| **Voice Interviews** | Full speech-to-text and text-to-speech interview mode with real-time transcription |
+| **Resume Upload & Parsing** | Upload PDF resumes; NLP extracts skills, projects, and experience using 80+ regex patterns across 14 skill categories |
+| **AI-Powered Interviews** | Custom NLP agent conducts interviews with context-aware question selection based on resume analysis |
+| **Voice Interviews** | Full speech-to-text and text-to-speech interview mode using browser-native Web Speech API (no cloud STT/TTS) |
 | **Live Coding Assessments** | In-browser code editor with multi-language sandbox execution (Python, JavaScript, C++, Java, SQL) |
-| **Real-Time Feedback** | Instant per-answer scoring with strengths, weaknesses, and improvement suggestions |
+| **Real-Time Feedback** | Instant per-answer scoring using TF-IDF + keyword matching with strengths, weaknesses, and improvements |
 | **Interview Summary** | Detailed final report with overall score, per-question breakdown, and hiring recommendation |
 
 ### 🛡️ Proctoring & Integrity
 
 | Feature | Description |
 |---|---|
-| **Face Detection** | MediaPipe-powered face monitoring to detect candidate presence throughout the session |
-| **Window Blur Detection** | Flags tab switching or window loss-of-focus events in real time |
-| **Risk Score Engine** | Continuous risk scoring with LOW / MEDIUM / HIGH threat classification |
-| **Event Audit Log** | Timestamped, immutable log of all proctoring events stored per session |
+| **Face Detection** | WebRTC camera monitoring with frame capture every 15 seconds |
+| **Fullscreen Enforcement** | Mandatory fullscreen mode; exiting (Esc) auto-terminates the session |
+| **Tab Switch Detection** | `visibilitychange` event listener flags focus-loss in real time |
+| **Voice Detection** | Web Audio API frequency analysis detects speaking (3 violations = auto-terminate) |
+| **Copy Prevention** | Clipboard events blocked during proctored sessions |
+| **Draggable Camera Widget** | Minimizable, repositionable proctor monitor overlay |
 
 ### 👩‍💼 Recruiter & Admin Tools
 
@@ -69,7 +86,31 @@ The platform supports **text interviews**, **voice interviews**, **live coding a
 | **Recruiter Dashboard** | View all candidate sessions, scores, and full interview summaries |
 | **Analytics Dashboard** | Platform-wide metrics — completion rates, score distributions, skill frequency |
 | **Role-Based Access Control** | Separate flows for `candidate`, `recruiter`, and `admin` roles enforced via JWT |
-| **Audit Trails** | Full audit logging of all data-modifying API actions |
+| **Audit Trails** | Structured logging of all API actions via structlog |
+
+### 👤 User Roles & Access
+
+The platform supports three roles with separate UIs and permissions:
+
+| Role | Access | Dashboard |
+|------|--------|-----------|
+| **Candidate** | Take interviews, view own scores, upload resume | `/dashboard` — My Interviews (KPIs + session history) |
+| **Recruiter** | View all candidates, review scores, deactivate users, analytics | `/recruiter` — Candidate Management table + session list |
+| **Admin** | Full platform control + user management | `/recruiter` + all admin API endpoints |
+
+#### How to Register as Recruiter
+
+On the **Register** page, select the **role** field:
+- `candidate` — default (takes interviews)
+- `recruiter` — reviews candidates (no interview access)
+- `admin` — full control
+
+Or via API:
+```bash
+curl -X POST http://localhost:8000/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"name": "HR Manager", "email": "hr@company.com", "password": "SecurePass123!", "role": "recruiter"}'
+```
 
 ### ⚙️ Platform & Infrastructure
 
@@ -77,38 +118,98 @@ The platform supports **text interviews**, **voice interviews**, **live coding a
 |---|---|
 | **JWT Authentication** | Secure access + refresh token flow with configurable expiry |
 | **Rate Limiting** | Per-endpoint rate limiting via SlowAPI (60 req/min default, 10/min on auth) |
-| **Anti-Repetition Engine** | FAISS-based semantic deduplication prevents repeated or similar questions |
-| **Auto-Migration** | Schema migrations run automatically on startup — no manual Alembic steps in development |
+| **Auto-Migration** | Schema migrations run automatically on startup — no manual steps needed |
+| **Question Anti-Repetition** | Category-balanced selection algorithm ensures variety across sessions |
 | **Structured Logging** | JSON-structured logs via structlog with full request tracing |
 | **Docker-First Infra** | PostgreSQL and Redis run in isolated, health-checked Docker containers |
+
+---
+
+## 🧠 AI & NLP Engine
+
+### Architecture: Rule-Based NLP + Statistical Scoring
+
+The system uses a **custom-built NLP engine** (`backend/nlp_engine/`) with 6 modules:
+
+| Module | Algorithm | Purpose |
+|--------|-----------|---------|
+| `resume_parser.py` | Regex + Keyword Matching (80+ patterns) | Extract skills, experience, projects from PDF resumes |
+| `question_bank.py` | Curated Template Database | **500 questions** across 14 categories |
+| `question_generator.py` | Weighted Random Selection + Difficulty Calibration | Select relevant questions based on skills & experience |
+| `answer_evaluator.py` | **TF-IDF + Cosine Similarity + Keyword Matching** | Score answers (0-10) with detailed breakdown |
+| `feedback_generator.py` | Rule-Based Template System | Generate per-question and final summary feedback |
+| `interview_agent.py` | **Finite State Machine** | Manage interview flow, track state, provide responses |
+
+### Scoring Formula
+
+```
+Per-Question Score (0-10):
+  = (keyword_match_score × 0.6) + (tfidf_cosine_similarity × 10 × 0.4)
+
+Final Score = average(all_question_scores)
+
+Recommendation:
+  ≥ 8.0 → "Strong Hire"
+  ≥ 6.5 → "Hire"  
+  ≥ 5.0 → "Maybe — needs improvement"
+  < 5.0 → "No Hire"
+```
+
+### Question Bank Statistics
+
+| Category | Count | Topics |
+|----------|-------|--------|
+| Python | 50 | OOP, generators, decorators, async, memory management |
+| JavaScript | 50 | Closures, prototypes, event loop, ES6+, promises |
+| React | 35 | Hooks, lifecycle, state management, performance |
+| SQL | 35 | Joins, indexes, normalization, query optimization |
+| AWS/Cloud | 30 | EC2, S3, Lambda, VPC, IAM, architecture patterns |
+| Docker/DevOps | 30 | Containers, CI/CD, orchestration, networking |
+| Machine Learning | 30 | Algorithms, metrics, feature engineering, deployment |
+| System Design | 40 | Scalability, caching, load balancing, microservices |
+| DSA | 40 | Arrays, trees, graphs, DP, sorting, searching |
+| API Design | 25 | REST, GraphQL, versioning, authentication |
+| Git | 20 | Branching, merging, rebasing, workflows |
+| Testing | 25 | Unit, integration, TDD, mocking, coverage |
+| Security | 25 | OWASP, encryption, auth patterns, vulnerabilities |
+| Behavioral/HR | 65 | STAR method, leadership, conflict, motivation |
+| **TOTAL** | **500** | |
 
 ---
 
 ## 🛠️ Tech Stack
 
 ### Backend
-- **[FastAPI](https://fastapi.tiangolo.com/)** — Async Python web framework
-- **[LangChain](https://python.langchain.com/)** — LLM orchestration, conversation memory, and chains
-- **[OpenRouter API](https://openrouter.ai/)** — LLM gateway supporting GPT-4o-mini & GPT-4o
-- **[SQLAlchemy 2.0](https://www.sqlalchemy.org/)** — Async ORM with `asyncpg` driver
-- **[Alembic](https://alembic.sqlalchemy.org/)** — Database schema migration management
-- **[FAISS](https://faiss.ai/)** — Vector similarity search for anti-repetition
-- **[Redis](https://redis.io/)** — Session caching and rate-limit state
-- **[MediaPipe](https://mediapipe.dev/)** — Face detection for proctoring
-- **[pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)** — Type-safe, env-driven configuration
-- **[structlog](https://www.structlog.org/)** — Structured, production-grade logging
-- **[SlowAPI](https://slowapi.readthedocs.io/)** — Rate limiting middleware for FastAPI
+| Technology | Purpose |
+|-----------|---------|
+| **[FastAPI](https://fastapi.tiangolo.com/)** | Async Python web framework |
+| **[SQLAlchemy 2.0](https://www.sqlalchemy.org/)** | Async ORM with `asyncpg` driver |
+| **[Pydantic v2](https://docs.pydantic.dev/)** | Request/response validation & settings |
+| **[Redis](https://redis.io/)** | Session caching, agent state, rate-limit state |
+| **[PostgreSQL 16](https://www.postgresql.org/)** | Relational data store (11 tables) |
+| **[structlog](https://www.structlog.org/)** | Structured, production-grade logging |
+| **[SlowAPI](https://slowapi.readthedocs.io/)** | Rate limiting middleware |
+| **[bcrypt](https://github.com/pyca/bcrypt)** | Password hashing (cost factor 12) |
+| **[PyJWT](https://pyjwt.readthedocs.io/)** | JWT token generation & verification |
+| **[pdfplumber](https://github.com/jsvine/pdfplumber)** | PDF text extraction |
+| **Custom NLP Engine** | TF-IDF scoring, keyword matching, resume parsing |
 
 ### Frontend
-- **Vanilla JavaScript (ES Modules)** — Zero-framework SPA with hash-based routing
-- **[Vite 5](https://vitejs.dev/)** — Lightning-fast dev server and production bundler
-- **Custom CSS Design System** — Dark-mode UI with gold accent palette and glassmorphism effects
+| Technology | Purpose |
+|-----------|---------|
+| **Vanilla JavaScript (ES Modules)** | Zero-framework SPA with hash-based routing |
+| **[Vite 5](https://vitejs.dev/)** | Lightning-fast dev server and production bundler |
+| **Web Speech API** | Browser-native STT (SpeechRecognition) & TTS (SpeechSynthesis) |
+| **Web Audio API** | Voice detection for proctoring |
+| **WebRTC (getUserMedia)** | Camera access for face monitoring |
+| **Custom CSS Design System** | Dark-mode UI with gold (#f5b800) accent palette |
 
 ### Infrastructure
-- **[PostgreSQL 16](https://www.postgresql.org/)** — Primary relational database
-- **[Redis 7](https://redis.io/)** — Cache and session store
-- **[Docker & Docker Compose](https://docs.docker.com/)** — Containerised service orchestration
-- **[Nginx](https://nginx.org/)** — Reverse proxy for production deployments
+| Technology | Purpose |
+|-----------|---------|
+| **[PostgreSQL 16](https://www.postgresql.org/)** | Primary relational database |
+| **[Redis 7](https://redis.io/)** | Cache and session store |
+| **[Docker & Docker Compose](https://docs.docker.com/)** | Containerised service orchestration |
 
 ---
 
@@ -116,38 +217,68 @@ The platform supports **text interviews**, **voice interviews**, **live coding a
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                         Client Browser                          │
-│             Vite SPA  (http://localhost:5173)                    │
-│     Login · Dashboard · Interview · Coding · Analytics          │
-└──────────────────────────┬──────────────────────────────────────┘
-                           │ HTTP / REST  (JWT Bearer Token)
-┌──────────────────────────▼──────────────────────────────────────┐
-│                      FastAPI Backend                             │
-│                   (http://localhost:8000)                        │
+│                       Client Browser                             │
+│                 Vite SPA (http://localhost:5173)                  │
 │                                                                  │
-│  /api/v1/auth       → JWT auth (register / login / refresh)     │
-│  /api/v1/resume     → PDF upload & AI resume parsing            │
-│  /api/v1/interview  → Question gen · chat loop · summary        │
-│  /api/v1/coding     → Challenge CRUD + sandbox code execution   │
-│  /api/v1/voice      → STT / TTS endpoints                       │
-│  /api/v1/proctor    → Proctoring event log + risk scoring       │
-│  /api/v1/analytics  → Recruiter & platform-wide analytics       │
-│  /health            → Database + Redis health check             │
-└────────┬────────────────────────────────┬────────────────────────┘
-         │                                │
-┌────────▼────────┐             ┌─────────▼──────────┐
-│   PostgreSQL    │             │       Redis         │
-│  (port 5433)    │             │    (port 6379)      │
-│                 │             │                     │
-│  users          │             │  session cache      │
-│  resumes        │             │  rate-limit state   │
-│  interviews     │             └─────────────────────┘
-│  questions      │
-│  answers        │             ┌─────────────────────┐
-│  coding_sub..   │             │   OpenRouter API     │
-│  proctor_logs   │             │  GPT-4o / GPT-4o-mini│
-│  audit_logs     │             └─────────────────────┘
-└─────────────────┘
+│   ┌─────────┐  ┌──────────┐  ┌─────────┐  ┌────────────────┐  │
+│   │  Login  │  │Dashboard │  │Interview│  │ Voice Interview│  │
+│   │  Page   │  │(KPIs +   │  │(Text +  │  │ (Speech API +  │  │
+│   │         │  │ Sessions)│  │ Proctor)│  │  NLP Backend)  │  │
+│   └────┬────┘  └────┬─────┘  └────┬────┘  └───────┬────────┘  │
+│        └─────────────┼─────────────┼───────────────┘            │
+│                      │ REST API (JWT Bearer Auth)                │
+└──────────────────────┼──────────────────────────────────────────┘
+                       │
+┌──────────────────────▼──────────────────────────────────────────┐
+│                  FastAPI Backend (localhost:8000)                  │
+│                                                                  │
+│  ┌────────────────────────────────────────────────────────────┐ │
+│  │                      Routes Layer                           │ │
+│  │  /auth  /resume  /interview  /voice  /proctor  /coding     │ │
+│  │  /analytics  /health                                        │ │
+│  └───────────────────────────┬────────────────────────────────┘ │
+│                              │                                   │
+│  ┌───────────────────────────▼────────────────────────────────┐ │
+│  │                   Services Layer                            │ │
+│  │  interview_agent (State Machine)                            │ │
+│  │  question_service · resume_service · session_service        │ │
+│  │  auth_service · proctor_service · sandbox_service           │ │
+│  └───────────────────────────┬────────────────────────────────┘ │
+│                              │                                   │
+│  ┌───────────────────────────▼────────────────────────────────┐ │
+│  │           NLP Engine (100% Local, No APIs)                  │ │
+│  │                                                             │ │
+│  │  ┌──────────────┐  ┌─────────────────┐  ┌──────────────┐  │ │
+│  │  │Resume Parser │  │ Question Bank   │  │  Answer      │  │ │
+│  │  │80+ patterns  │  │ 500 questions   │  │  Evaluator   │  │ │
+│  │  │14 categories │  │ 14 categories   │  │  TF-IDF +    │  │ │
+│  │  │              │  │ 3 difficulties  │  │  Cosine Sim  │  │ │
+│  │  └──────────────┘  └─────────────────┘  └──────────────┘  │ │
+│  │  ┌──────────────────┐  ┌─────────────────────────────────┐│ │
+│  │  │Question Generator│  │ Feedback Generator              ││ │
+│  │  │Weighted selection│  │ Template-based scoring report    ││ │
+│  │  │Difficulty calib. │  │ Strengths + improvements        ││ │
+│  │  └──────────────────┘  └─────────────────────────────────┘│ │
+│  └────────────────────────────────────────────────────────────┘ │
+└────────┬───────────────────────────────────┬────────────────────┘
+         │                                   │
+┌────────▼────────────┐            ┌────────▼────────────┐
+│    PostgreSQL        │            │       Redis          │
+│   (port 5433)        │            │    (port 6379)       │
+│                      │            │                      │
+│  11 tables:          │            │  Stores:             │
+│  • users             │            │  • session metadata  │
+│  • interview_sessions│            │  • questions cache   │
+│  • questions         │            │  • agent state       │
+│  • answers           │            │  • interview state   │
+│  • proctor_logs      │            │  • rate-limit keys   │
+│  • analytics         │            │  • parsed resumes    │
+│  • audit_logs        │            │                      │
+│  • resumes           │            │                      │
+│  • coding_challenges │            │                      │
+│  • coding_submissions│            │                      │
+│  • question_embeddings│           │                      │
+└──────────────────────┘            └──────────────────────┘
 ```
 
 ---
@@ -160,7 +291,7 @@ The platform supports **text interviews**, **voice interviews**, **live coding a
 |---|---|
 | Python | 3.11+ |
 | Node.js | 18+ |
-| Docker Desktop | Latest |
+| Docker Desktop | Latest (for PostgreSQL + Redis) |
 | Git | Any |
 
 ### 1. Clone the Repository
@@ -179,9 +310,6 @@ cp .env.example .env
 Open `.env` and set your values:
 
 ```env
-# Required — get your free key at https://openrouter.ai/
-OPENROUTER_API_KEY=sk-or-v1-...
-
 # PostgreSQL — Docker manages this automatically
 DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5433/interview_assistant
 
@@ -192,6 +320,10 @@ REDIS_URL=redis://localhost:6379/0
 # python scripts/generate_secrets.py
 SECRET_KEY=your-64-char-hex-secret
 JWT_SECRET_KEY=your-128-char-hex-secret
+
+# NLP Engine (no API keys needed!)
+USE_LOCAL_NLP=true
+OPENROUTER_API_KEY=          # Leave empty — not needed
 ```
 
 ### 3. Start Infrastructure (PostgreSQL + Redis)
@@ -226,7 +358,7 @@ pip install -r requirements.txt
 python run_backend.py
 ```
 
-> The backend auto-creates all database tables on first launch. No manual migration steps needed in development.
+> The backend auto-creates all database tables and runs migrations on first launch. No manual migration steps needed.
 
 ### 6. Start the Frontend
 
@@ -259,27 +391,20 @@ Automatically starts Docker Desktop, waits for health checks, then launches back
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `OPENROUTER_API_KEY` | ✅ | — | OpenRouter API key for LLM access |
-| `OPENROUTER_MODEL` | ❌ | `openai/gpt-4o-mini` | Model for question & feedback generation |
-| `AGENT_MODEL` | ❌ | `openai/gpt-4o` | Model for the interview agent |
 | `DATABASE_URL` | ✅ | — | PostgreSQL async connection string |
 | `REDIS_URL` | ✅ | `redis://localhost:6379/0` | Redis connection URL |
 | `SECRET_KEY` | ✅ | — | App secret key (64 hex chars minimum) |
 | `JWT_SECRET_KEY` | ✅ | — | JWT signing key (128 hex chars minimum) |
+| `USE_LOCAL_NLP` | ❌ | `true` | Use local NLP engine (no external APIs) |
+| `OPENROUTER_API_KEY` | ❌ | `""` | Optional — leave empty for offline mode |
 | `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` | ❌ | `1440` | Access token lifetime in minutes |
 | `JWT_REFRESH_TOKEN_EXPIRE_DAYS` | ❌ | `7` | Refresh token lifetime in days |
-| `DEBUG` | ❌ | `true` | Enable debug mode (disables production secret validation) |
-| `ALLOWED_ORIGINS` | ❌ | `localhost:5173,8501,3000` | Comma-separated CORS allowed origins |
+| `DEBUG` | ❌ | `true` | Enable debug mode |
+| `ALLOWED_ORIGINS` | ❌ | `localhost:5173,8501,3000` | Comma-separated CORS origins |
 | `RATE_LIMIT_DEFAULT` | ❌ | `60/minute` | Default API rate limit |
 | `RATE_LIMIT_AUTH` | ❌ | `10/minute` | Auth endpoint rate limit |
-| `AGENT_TEMPERATURE` | ❌ | `0.4` | LLM temperature (creativity) |
-| `PROCTOR_FACE_MATCH_THRESHOLD` | ❌ | `0.78` | Face detection confidence threshold |
-| `FAISS_INDEX_PATH` | ❌ | `./data/faiss_index` | Path for FAISS vector store |
-
-> 💡 **Generate secure secrets instantly:**
-> ```bash
-> python scripts/generate_secrets.py
-> ```
+| `AGENT_MAX_FOLLOW_UPS` | ❌ | `0` | Number of follow-up questions (0 = disabled) |
+| `AGENT_TEMPERATURE` | ❌ | `0.4` | NLP scoring sensitivity |
 
 ---
 
@@ -296,6 +421,7 @@ Full interactive documentation is available at:
 POST   /api/v1/auth/register              Create a new user account
 POST   /api/v1/auth/login                 Authenticate and receive JWT tokens
 POST   /api/v1/auth/refresh               Refresh an expired access token
+GET    /api/v1/auth/me                    Get current user profile
 
 # Resume
 POST   /api/v1/resume/upload              Upload a PDF resume (initiates a session)
@@ -312,16 +438,19 @@ POST   /api/v1/coding/run                  Execute candidate code against test c
 POST   /api/v1/coding/submit              Submit final solution for scoring
 
 # Voice
-POST   /api/v1/voice/transcribe            Convert audio to text (STT)
-POST   /api/v1/voice/synthesize            Convert text to audio (TTS)
+GET    /api/v1/tts/speak                   Text-to-speech audio generation
 
 # Proctoring
+POST   /api/v1/proctor/analyze-frame       Analyze webcam frame for violations
 POST   /api/v1/proctor/log-event           Record a proctoring event
-GET    /api/v1/proctor/risk/{session_id}   Retrieve risk score for a session
+GET    /api/v1/proctor/session-report/{session_id}   Get proctoring report
 
 # Analytics
-GET    /api/v1/analytics/platform          Platform-wide aggregated metrics
-GET    /api/v1/analytics/sessions          All sessions (recruiter-only view)
+GET    /api/v1/analytics/overview          Platform KPIs (total, avg score, pass rate)
+GET    /api/v1/analytics/history           Session history with scores
+GET    /api/v1/analytics/skills            Skill frequency analysis
+GET    /api/v1/analytics/strengths-weaknesses   Aggregated strengths/improvements
+GET    /api/v1/analytics/performance-trend      Score trend over time
 
 # Health
 GET    /health                             Returns DB + Redis connectivity status
@@ -334,28 +463,27 @@ GET    /health                             Returns DB + Redis connectivity statu
 ```
 AI-Interview-Assistant/
 ├── backend/
-│   ├── core/                    # Config, security, logging, middleware, rate limiter
-│   │   ├── config.py            # Pydantic-settings with full env validation
-│   │   ├── security.py          # JWT auth, bcrypt hashing, CORS setup
-│   │   ├── middleware.py        # Request logging + security headers middleware
+│   ├── core/                    # Config, security, logging, middleware
+│   │   ├── config.py            # Pydantic-settings with env validation
+│   │   ├── security.py          # JWT auth, bcrypt, CORS, RBAC
+│   │   ├── middleware.py        # Request logging + security headers
 │   │   ├── logging.py           # structlog configuration
 │   │   └── rate_limiter.py      # SlowAPI limiter singleton
 │   ├── db/                      # Database layer
 │   │   ├── session.py           # Async SQLAlchemy engine + session factory
 │   │   ├── redis.py             # Redis connection pool
-│   │   ├── base.py              # Declarative base model
-│   │   └── auto_migrate.py      # Dev-mode auto schema migration
-│   ├── models/                  # SQLAlchemy ORM models
+│   │   ├── base.py              # Declarative base + mixins
+│   │   └── auto_migrate.py      # Auto-adds missing columns on startup
+│   ├── models/                  # SQLAlchemy ORM models + Pydantic schemas
 │   │   ├── user.py              # User accounts and roles
 │   │   ├── interview.py         # Interview sessions
 │   │   ├── question.py          # Generated questions
 │   │   ├── answer.py            # Candidate answers with scores
-│   │   ├── resume.py            # Parsed resume data
-│   │   ├── coding_challenge.py  # Coding challenge definitions
-│   │   ├── coding_submission.py # Code submission results
+│   │   ├── schemas.py           # Pydantic request/response schemas
 │   │   ├── proctor_log.py       # Proctoring event log
-│   │   ├── audit_log.py         # System audit trail
-│   │   └── analytics.py         # Analytics aggregation models
+│   │   ├── analytics.py         # Analytics aggregation
+│   │   ├── coding_challenge.py  # Coding challenge definitions
+│   │   └── coding_submission.py # Code submission results
 │   ├── routes/                  # FastAPI API routers
 │   │   ├── auth_routes.py       # /api/v1/auth
 │   │   ├── interview_routes.py  # /api/v1/interview
@@ -364,72 +492,97 @@ AI-Interview-Assistant/
 │   │   ├── voice_routes.py      # /api/v1/voice
 │   │   ├── proctor_routes.py    # /api/v1/proctor
 │   │   ├── analytics_routes.py  # /api/v1/analytics
-│   │   ├── health_routes.py     # /health
-│   │   └── tts_routes.py        # Text-to-speech
+│   │   └── health_routes.py     # /health
 │   ├── services/                # Business logic layer
-│   │   ├── interview_agent.py   # LangChain GPT-4o interview agent
-│   │   ├── sandbox_service.py   # Code execution engine (cross-platform)
-│   │   ├── auth_service.py      # Registration, login, token management
-│   │   ├── proctor_service.py   # Risk scoring and event handling
-│   │   ├── session_service.py   # Session state management (Redis)
-│   │   ├── context_engine.py    # Resume context extraction for questions
-│   │   ├── anti_repetition.py   # FAISS-based question deduplication
-│   │   ├── prompt_templates.py  # LLM prompt library
-│   │   └── voice_service.py     # STT / TTS processing
-│   ├── nlp_engine/              # NLP processing modules
-│   │   ├── question_generator.py
-│   │   ├── feedback_generator.py
-│   │   ├── answer_evaluator.py
-│   │   └── resume_parser.py
+│   │   ├── interview_agent.py   # State-machine interview conductor
+│   │   ├── question_service.py  # Question generation orchestrator
+│   │   ├── interview_service.py # Interview flow manager
+│   │   ├── resume_service.py    # Resume upload + parse pipeline
+│   │   ├── session_service.py   # Redis session state management
+│   │   ├── auth_service.py      # Registration, login, tokens
+│   │   ├── context_engine.py    # Project-context question generation
+│   │   └── audit_service.py     # Console-based audit logging
+│   ├── nlp_engine/              # 🧠 Custom NLP Engine (NO external APIs)
+│   │   ├── __init__.py          # Package exports
+│   │   ├── resume_parser.py     # Regex-based resume extraction (80+ patterns)
+│   │   ├── question_bank.py     # 500 questions × 14 categories × 3 difficulties
+│   │   ├── question_generator.py # Skill-based selection with calibration
+│   │   ├── answer_evaluator.py  # TF-IDF + keyword scoring engine
+│   │   └── feedback_generator.py # Template-based feedback generation
 │   ├── alembic/                 # Production database migrations
-│   │   └── versions/            # 6 versioned migration scripts
-│   ├── seed_challenges.py       # Default coding challenge seeder
 │   └── main.py                  # FastAPI app entry point + lifespan
 ├── frontend/
 │   └── src/
-│       ├── api/                 # HTTP client and request helpers
+│       ├── api/                 # HTTP client + request helpers
+│       │   ├── client.js        # Fetch wrapper with JWT refresh
+│       │   └── index.js         # API module exports
 │       ├── components/          # Reusable UI components
-│       │   ├── Navbar.js
-│       │   ├── ProctorMonitor.js
-│       │   ├── Toast.js
-│       │   └── VoiceConsole.js
+│       │   ├── Navbar.js        # Top navigation with user menu
+│       │   ├── ProctorMonitor.js # Draggable webcam + fullscreen + violations
+│       │   ├── VoiceConsole.js  # Speech recognition console
+│       │   ├── Sidebar.js       # Navigation sidebar
+│       │   └── Toast.js         # Notification toasts
 │       ├── pages/               # Page-level renderers
-│       │   ├── LoginPage.js
-│       │   ├── CandidateDashboard.js
-│       │   ├── InterviewFlow.js
-│       │   ├── RecruiterDashboard.js
-│       │   ├── AnalyticsDashboard.js
-│       │   ├── VoiceInterview.js
-│       │   └── steps/           # Multi-step interview panels
-│       └── styles/              # CSS design system (dark mode + gold palette)
+│       │   ├── LoginPage.js     # Auth (login + register)
+│       │   ├── CandidateDashboard.js  # KPIs + session history
+│       │   ├── InterviewFlow.js       # Multi-step interview controller
+│       │   ├── VoiceInterview.js      # Standalone voice HR interview
+│       │   ├── RecruiterDashboard.js  # Admin view of all sessions
+│       │   ├── AnalyticsDashboard.js  # Platform analytics
+│       │   └── steps/                 # Interview step panels
+│       │       ├── Step1Upload.js     # Resume upload
+│       │       ├── Step2Questions.js  # Question generation
+│       │       ├── Step3Interview.js  # Text/voice chat (proctored)
+│       │       ├── Step4Coding.js     # Live coding assessment
+│       │       └── Step5Summary.js    # Final report
+│       └── styles/              # CSS design system
+│           ├── main.css         # Design tokens (dark + gold theme)
+│           ├── auth.css         # Login/register styles
+│           ├── components.css   # Component styles
+│           ├── interview.css    # Interview panel styles
+│           └── dashboard.css    # Dashboard & analytics styles
 ├── scripts/
-│   ├── generate_secrets.py      # Secure secret key generator
-│   └── init-db.sql              # Manual DB initialisation script
+│   ├── migrate_add_missing_columns.sql  # Manual DB migration
+│   └── generate_secrets.py              # Secure secret key generator
 ├── docker-compose.yml           # Development: PostgreSQL + Redis
-├── docker-compose.prod.yml      # Production: full stack deployment
+├── docker-compose.prod.yml      # Production: full stack
 ├── requirements.txt             # Python dependencies
-├── run_backend.py               # Backend convenience launcher
-├── run_frontend.py              # Frontend convenience launcher
-├── start.ps1                    # Windows one-click startup script
-└── .env.example                 # Environment configuration template
+├── run_backend.py               # Backend launcher
+├── run_frontend.py              # Frontend launcher
+├── start.ps1                    # Windows one-click startup
+├── cleanup.ps1                  # Clear cache + Redis
+├── .env.example                 # Environment template
+├── .gitignore                   # Git ignore rules
+├── .dockerignore                # Docker build exclusions
+├── TECHNICAL_REPORT.md          # Detailed AI/algorithm documentation
+└── ISSUES_REPORT.md             # Bug fix history
 ```
 
 ---
 
-## 🧪 Testing & Diagnostics
+## 🔒 Security
+
+| Layer | Implementation |
+|-------|---------------|
+| Authentication | JWT access + refresh tokens (configurable expiry) |
+| Password Storage | bcrypt (cost factor 12) |
+| Rate Limiting | SlowAPI — 60/min general, 10/min auth |
+| CORS | Whitelist-based origin control |
+| Security Headers | CSP, X-Frame-Options, X-Content-Type-Options, HSTS |
+| Input Validation | Pydantic v2 strict schemas on all endpoints |
+| Session Isolation | UUID-based session IDs, Redis-scoped data |
+| Proctoring | Fullscreen enforcement + camera + audio + tab monitoring |
+
+---
+
+## 🧪 Diagnostics
 
 ```bash
 # Verify database and Redis connectivity
 python diagnose.py
 
-# Test sandbox code execution engine
-python test_sandbox.py
-
-# Test voice processing pipeline
-python test_voice.py
-
-# Test proctoring system
-python test_proctor.py
+# Clean all cached bytecode + Redis
+.\cleanup.ps1
 ```
 
 ---
@@ -450,17 +603,6 @@ python run_backend.py
 # Set all secrets in .env first, then:
 docker compose -f docker-compose.prod.yml up -d
 ```
-
----
-
-## 🔐 Security
-
-- All API routes (except `/health` and `/api/v1/auth/*`) require a valid **JWT Bearer token**
-- Passwords hashed with **bcrypt** (cost factor 12)
-- Rate limiting enforced at both auth (10 req/min) and general (60 req/min) tiers
-- CORS restricted to explicitly configured origins only
-- Security response headers applied globally: `CSP`, `X-Frame-Options`, `X-Content-Type-Options`, `Strict-Transport-Security`
-- In production mode (`DEBUG=false`), startup validation rejects any placeholder or weak secret values
 
 ---
 
@@ -494,7 +636,9 @@ This project is licensed under the **MIT License** — see the [LICENSE](LICENSE
 
 <div align="center">
 
-Built with ❤️ using **FastAPI · LangChain · GPT-4o · PostgreSQL · Redis · Vite**
+Built with ❤️ using **FastAPI · Custom NLP Engine · TF-IDF · PostgreSQL · Redis · Vite**
+
+**Fully offline. Zero cost. Complete privacy.**
 
 **[⭐ Star this repo if you find it useful!](https://github.com/Ranjith01111/AI-Interview-Assistant)**
 

@@ -6,21 +6,22 @@ import { ProctorMonitor } from '../../components/ProctorMonitor.js';
 const LANG_MAP = { python:'python', javascript:'javascript', java:'java', c:'c', cpp:'cpp', sql:'sql' };
 const CODING_TIME_LIMIT = 30 * 60; // 30 minutes in seconds
 
-const MONACO_CDN = 'https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs';
+import * as monaco from 'monaco-editor';
+import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
+import jsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker';
+import cssWorker from 'monaco-editor/esm/vs/language/css/css.worker?worker';
+import htmlWorker from 'monaco-editor/esm/vs/language/html/html.worker?worker';
+import tsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker';
 
-let _monacoLoaded = false;
-function loadMonaco() {
-  return new Promise(resolve => {
-    if (_monacoLoaded) { resolve(); return; }
-    const script = document.createElement('script');
-    script.src = `${MONACO_CDN}/loader.js`;
-    script.onload = () => {
-      window.require.config({ paths: { vs: MONACO_CDN } });
-      window.require(['vs/editor/editor.main'], () => { _monacoLoaded = true; resolve(); });
-    };
-    document.head.appendChild(script);
-  });
-}
+self.MonacoEnvironment = {
+  getWorker(_, label) {
+    if (label === 'json') return new jsonWorker();
+    if (label === 'css' || label === 'scss' || label === 'less') return new cssWorker();
+    if (label === 'html' || label === 'handlebars' || label === 'razor') return new htmlWorker();
+    if (label === 'typescript' || label === 'javascript') return new tsWorker();
+    return new editorWorker();
+  }
+};
 
 export async function renderStep4(container, state, onNext, onForceEnd) {
   container.innerHTML = `
@@ -67,7 +68,7 @@ export async function renderStep4(container, state, onNext, onForceEnd) {
             <button class="btn btn-secondary btn-sm" id="run-btn" disabled>▶ Run</button>
             <button class="btn btn-success btn-sm" id="submit-btn" disabled>✔ Submit</button>
           </div>
-          <div id="monaco-container"></div>
+          <div id="monaco-container" style="flex:1;min-height:200px"></div>
           <div class="terminal-panel" id="terminal">
             <div class="terminal-line info">// Run your code to see results</div>
           </div>
@@ -79,11 +80,15 @@ export async function renderStep4(container, state, onNext, onForceEnd) {
   let editor = null;
   let selectedChallenge = null;
   let proctor = null;
-  const codingScores = {}; // { challengeId: score }
+  let challengesMap = {};
+  const codingScores = {};
   let timerInterval = null;
   let timeRemaining = CODING_TIME_LIMIT;
 
-  /* Timer functions */
+  /* ══════════════════════════════════════════════════════════════════
+     HELPER FUNCTIONS
+     ══════════════════════════════════════════════════════════════════ */
+
   function startTimer() {
     updateTimerDisplay();
     timerInterval = setInterval(() => {
@@ -119,138 +124,6 @@ export async function renderStep4(container, state, onNext, onForceEnd) {
     if (onNext) onNext();
   }
 
-  /* Start Proctoring for coding panel */
-  proctor = new ProctorMonitor(state.sessionId, {
-    onSessionEnd: () => {
-      // Esc pressed / fullscreen exited → go directly to final summary
-      if (onForceEnd) onForceEnd();
-    },
-    skipFullscreen: true
-  });
-  await proctor.mount(document.body);
-
-  /* Start Timer */
-  startTimer();
-
-  /* Load challenges */
-  try {
-    const challenges = await coding.getChallenges();
-    const sel = container.querySelector('#challenge-select');
-    if (challenges.length === 0) {
-      sel.innerHTML = '<option value="">No challenges available</option>';
-    } else {
-      challenges.forEach(c => {
-        const opt = document.createElement('option');
-        opt.value = c.id;
-        opt.textContent = `${c.title} [${c.difficulty.toUpperCase()}]`;
-        sel.appendChild(opt);
-      });
-      // Auto-select first challenge
-      if (challenges.length > 0) {
-        sel.value = challenges[0].id;
-        sel.dispatchEvent(new Event('change'));
-      }
-    }
-  } catch (err) {
-    Toast.error(err.message, 'Challenges');
-  }
-
-  /* Load Monaco */
-  await loadMonaco();
-  const monacoEl = container.querySelector('#monaco-container');
-  monacoEl.style.flex = '1';
-  editor = window.monaco.editor.create(monacoEl, {
-    value: '# Select a challenge to begin\n',
-    language: 'python',
-    theme: 'vs-dark',
-    fontSize: 14,
-    minimap: { enabled: false },
-    scrollBeyondLastLine: false,
-    automaticLayout: true,
-    fontFamily: "'JetBrains Mono', monospace",
-  });
-
-  /* Challenge select */
-  container.querySelector('#challenge-select').onchange = async (e) => {
-    const id = e.target.value;
-    if (!id) return;
-    try {
-      selectedChallenge = await coding.getChallenge(id);
-      renderChallengeDetails(selectedChallenge);
-      const lang = container.querySelector('#lang-selector').value;
-      const tmpl = selectedChallenge.template_code?.[lang] || `# Write your ${lang} solution here\n`;
-      editor.setValue(tmpl);
-      window.monaco.editor.setModelLanguage(editor.getModel(), LANG_MAP[lang] || 'python');
-      container.querySelector('#run-btn').disabled = false;
-      container.querySelector('#submit-btn').disabled = false;
-    } catch (err) { Toast.error(err.message); }
-  };
-
-  /* Language change */
-  container.querySelector('#lang-selector').onchange = (e) => {
-    const lang = e.target.value;
-    window.monaco.editor.setModelLanguage(editor.getModel(), LANG_MAP[lang] || 'python');
-    if (selectedChallenge) {
-      const tmpl = selectedChallenge.template_code?.[lang] || `# Write your ${lang} solution here\n`;
-      editor.setValue(tmpl);
-    }
-  };
-
-  /* Run */
-  container.querySelector('#run-btn').onclick = async () => {
-    if (!selectedChallenge) return;
-    const code = editor.getValue();
-    const lang = container.querySelector('#lang-selector').value;
-    const term = container.querySelector('#terminal');
-    const btn = container.querySelector('#run-btn');
-    btn.disabled = true; btn.textContent = '⏳ Running...';
-    term.innerHTML = '<div class="terminal-line info">⏳ Executing code against test cases...</div>';
-    try {
-      const result = await coding.runCode(selectedChallenge.id, lang, code);
-      renderResults(term, result, 'Run');
-    } catch (err) {
-      term.innerHTML = `<div class="terminal-line fail">❌ Error: ${err.message}</div>`;
-    }
-    btn.disabled = false; btn.textContent = '▶ Run';
-  };
-
-  /* Submit */
-  container.querySelector('#submit-btn').onclick = async () => {
-    if (!selectedChallenge || !state.sessionId) return;
-    const code = editor.getValue();
-    const lang = container.querySelector('#lang-selector').value;
-    const btn = container.querySelector('#submit-btn');
-    const term = container.querySelector('#terminal');
-    btn.disabled = true; btn.textContent = '⏳ Evaluating...';
-    term.innerHTML = '<div class="terminal-line info">⏳ Running against all test cases (including hidden)...</div>';
-    try {
-      const result = await coding.submitCode(state.sessionId, selectedChallenge.id, lang, code);
-      const data = result.results || result;
-      renderResults(term, data, 'Submit');
-      const score = data.score ?? result.score ?? 0;
-      codingScores[selectedChallenge.id] = score;
-      updateCodingScoreDisplay();
-      if (score === 100) Toast.success('🎉 All test cases passed! Perfect score.', 'Accepted');
-      else if (score > 0) Toast.warning(`Score: ${score}/100 — Some test cases failed.`, 'Partial');
-      else Toast.error(`Score: 0/100 — No test cases passed.`, 'Failed');
-    } catch (err) {
-      term.innerHTML = `<div class="terminal-line fail">❌ ${err.message}</div>`;
-    }
-    btn.disabled = false; btn.textContent = '✔ Submit';
-  };
-
-  /* Finish coding */
-  container.querySelector('#finish-coding-btn').onclick = () => {
-    finishCoding();
-  };
-
-  function updateCodingScoreDisplay() {
-    const scores = Object.values(codingScores);
-    const avg = scores.length ? Math.round(scores.reduce((a,b) => a+b, 0) / scores.length) : 0;
-    container.querySelector('#coding-score-display').textContent = `Score: ${avg}/100`;
-  }
-
-  /* Render challenge details */
   function renderChallengeDetails(c) {
     const body = container.querySelector('#challenge-body');
     body.innerHTML = `
@@ -261,11 +134,30 @@ export async function renderStep4(container, state, onNext, onForceEnd) {
         </div>
         <p style="font-size:0.75rem;color:var(--text-muted)">⏱ ${c.time_limit}s • 💾 ${c.memory_limit}MB</p>
       </div>
-      <div class="challenge-desc" style="font-size:0.82rem;line-height:1.6">${markdownToHtml(c.description)}</div>
+      <div class="challenge-desc" style="font-size:0.82rem;line-height:1.6;overflow-y:auto">${markdownToHtml(c.description)}</div>
     `;
   }
 
-  /* Render test results */
+  function markdownToHtml(md) {
+    return md
+      .replace(/^## (.*$)/gm, '<h3 style="color:var(--accent-gold);margin:12px 0 6px">$1</h3>')
+      .replace(/^### (.*$)/gm, '<h4 style="margin:10px 0 4px;font-size:0.85rem">$1</h4>')
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/`([^`]+)`/g, '<code style="background:rgba(245,184,0,0.1);padding:1px 4px;border-radius:3px;font-size:0.8rem">$1</code>')
+      .replace(/\n\n/g, '<br><br>')
+      .replace(/\n/g, '<br>');
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function updateCodingScoreDisplay() {
+    const scores = Object.values(codingScores);
+    const avg = scores.length ? Math.round(scores.reduce((a,b) => a+b, 0) / scores.length) : 0;
+    container.querySelector('#coding-score-display').textContent = `Score: ${avg}/100`;
+  }
+
   function renderResults(termEl, result, mode) {
     const tests = result?.results || [];
     const score = result?.score;
@@ -309,7 +201,6 @@ export async function renderStep4(container, state, onNext, onForceEnd) {
       html += `</div>`;
     });
 
-    // Summary bar
     const passed = tests.filter(t => t.passed).length;
     const total = tests.length;
     const pct = Math.round((passed / total) * 100);
@@ -326,20 +217,122 @@ export async function renderStep4(container, state, onNext, onForceEnd) {
     termEl.innerHTML = html;
   }
 
-  /* Simple markdown to HTML */
-  function markdownToHtml(md) {
-    return md
-      .replace(/^## (.*$)/gm, '<h3 style="color:var(--accent-gold);margin:12px 0 6px">$1</h3>')
-      .replace(/^### (.*$)/gm, '<h4 style="margin:10px 0 4px;font-size:0.85rem">$1</h4>')
-      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-      .replace(/`([^`]+)`/g, '<code style="background:rgba(245,184,0,0.1);padding:1px 4px;border-radius:3px;font-size:0.8rem">$1</code>')
-      .replace(/\n\n/g, '<br><br>')
-      .replace(/\n/g, '<br>');
-  }
+  /* Start Proctoring */
+  proctor = new ProctorMonitor(state.sessionId, {
+    onSessionEnd: () => { if (onForceEnd) onForceEnd(); },
+    skipFullscreen: true
+  });
+  await proctor.mount(document.body);
+  startTimer();
 
-  function escapeHtml(s) {
-    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  }
+  /* Load Challenges */
+  try {
+    const challenges = await coding.getChallenges();
+    const sel = container.querySelector('#challenge-select');
+    if (challenges.length === 0) sel.innerHTML = '<option value="">No challenges available</option>';
+    else {
+      const seen = new Set();
+      challenges.forEach(c => {
+        if (!seen.has(c.title)) {
+          seen.add(c.title);
+          const opt = document.createElement('option');
+          opt.value = c.id;
+          opt.textContent = `${c.title} [${c.difficulty.toUpperCase()}]`;
+          sel.appendChild(opt);
+          challengesMap[c.id] = c;
+        }
+      });
+    }
+  } catch (err) { console.error(err); Toast.error('Failed to load challenges'); }
+
+  /* Challenge select handler */
+  const challengeSelectHandler = async (e) => {
+    const id = e.target ? e.target.value : e;
+    if (!id) return;
+    try {
+      selectedChallenge = challengesMap[id] || await coding.getChallenge(id);
+      renderChallengeDetails(selectedChallenge);
+      const lang = container.querySelector('#lang-selector').value;
+      const tmpl = selectedChallenge.template_code?.[lang] || `# Write your ${lang} solution here\n`;
+      if (editor) {
+        editor.setValue(tmpl);
+        monaco.editor.setModelLanguage(editor.getModel(), LANG_MAP[lang] || 'python');
+      }
+      container.querySelector('#run-btn').disabled = false;
+      container.querySelector('#submit-btn').disabled = false;
+    } catch (err) { Toast.error('Failed to load challenge'); }
+  };
+
+  const selectEl = container.querySelector('#challenge-select');
+  selectEl.onchange = challengeSelectHandler;
+
+  /* Load Monaco IDE locally */
+  const monacoEl = container.querySelector('#monaco-container');
+  monacoEl.style.flex = '1';
+  editor = monaco.editor.create(monacoEl, {
+    value: '# Select a challenge to begin\n',
+    language: 'python',
+    theme: 'vs-dark',
+    fontSize: 14,
+    minimap: { enabled: false },
+    scrollBeyondLastLine: false,
+    automaticLayout: true,
+    fontFamily: "'JetBrains Mono', monospace",
+  });
+
+  /* Language change */
+  container.querySelector('#lang-selector').onchange = (e) => {
+    const lang = e.target.value;
+    if (editor) monaco.editor.setModelLanguage(editor.getModel(), LANG_MAP[lang] || 'python');
+    if (selectedChallenge) {
+      const tmpl = selectedChallenge.template_code?.[lang] || `# Write your ${lang} solution here\n`;
+      if (editor) editor.setValue(tmpl);
+    }
+  };
+
+  /* Run */
+  container.querySelector('#run-btn').onclick = async () => {
+    if (!selectedChallenge) return;
+    const code = editor ? editor.getValue() : '';
+    const lang = container.querySelector('#lang-selector').value;
+    const term = container.querySelector('#terminal');
+    const btn = container.querySelector('#run-btn');
+    btn.disabled = true; btn.textContent = '⏳ Running...';
+    term.innerHTML = '<div class="terminal-line info">⏳ Executing code against test cases...</div>';
+    try {
+      const result = await coding.runCode(selectedChallenge.id, lang, code);
+      renderResults(term, result, 'Run');
+    } catch (err) { term.innerHTML = `<div class="terminal-line fail">❌ Error: ${err.message}</div>`; }
+    btn.disabled = false; btn.textContent = '▶ Run';
+  };
+
+  /* Submit */
+  container.querySelector('#submit-btn').onclick = async () => {
+    if (!selectedChallenge || !state.sessionId) return;
+    const code = editor ? editor.getValue() : '';
+    const lang = container.querySelector('#lang-selector').value;
+    const btn = container.querySelector('#submit-btn');
+    const term = container.querySelector('#terminal');
+    btn.disabled = true; btn.textContent = '⏳ Evaluating...';
+    term.innerHTML = '<div class="terminal-line info">⏳ Running against all test cases (including hidden)...</div>';
+    try {
+      const result = await coding.submitCode(state.sessionId, selectedChallenge.id, lang, code);
+      const data = result.results || result;
+      renderResults(term, data, 'Submit');
+      const score = data.score ?? result.score ?? 0;
+      codingScores[selectedChallenge.id] = score;
+      updateCodingScoreDisplay();
+      if (score === 100) Toast.success('🎉 All test cases passed! Perfect score.', 'Accepted');
+      else if (score > 0) Toast.warning(`Score: ${score}/100 — Some test cases failed.`, 'Partial');
+      else Toast.error(`Score: 0/100 — No test cases passed.`, 'Failed');
+    } catch (err) {
+      term.innerHTML = `<div class="terminal-line fail">❌ ${err.message}</div>`;
+    }
+    btn.disabled = false; btn.textContent = '✔ Submit';
+  };
+
+  /* Finish coding */
+  container.querySelector('#finish-coding-btn').addEventListener('click', () => finishCoding());
 
   /* Clean up proctor on navigate away */
   container._destroyProctor = () => {

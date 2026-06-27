@@ -1,67 +1,612 @@
 import { renderNavbar } from '../components/Navbar.js';
 import { renderSidebar } from '../components/Sidebar.js';
 import { auth, analytics } from '../api/index.js';
+import { apiJSON } from '../api/client.js';
 import { navigate } from '../main.js';
 import { Toast } from '../components/Toast.js';
 
+/**
+ * Recruiter Dashboard — Candidate Ranking Table
+ * Features: Search, Sort, Filter, Pagination, Color-coded scores
+ */
+
+// ── State ──────────────────────────────────────────────────────────────────────
+let state = {
+  candidates: [],
+  totalCount: 0,
+  page: 1,
+  pageSize: 20,
+  totalPages: 1,
+  search: '',
+  sortBy: 'date',
+  sortOrder: 'desc',
+  status: 'completed',
+  minScore: null,
+  maxScore: null,
+  skills: [],
+  availableSkills: [],
+  loading: false,
+};
+
+let debounceTimer = null;
+
+// ── Main Render ────────────────────────────────────────────────────────────────
 export async function renderRecruiterDashboard(container) {
   container.innerHTML = '';
   renderNavbar(container);
-  
+
   const layout = document.createElement('div');
   layout.style.display = 'flex';
   layout.style.height = 'calc(100vh - 60px)';
-  
+
   layout.appendChild(renderSidebar('recruiter'));
-  
+
   const main = document.createElement('div');
   main.className = 'app-main';
   main.style.flex = '1';
   main.style.overflowY = 'auto';
-  
+
   main.innerHTML = `
     <div class="page-content recruiter-dashboard">
       <div class="page-header">
         <h1>Candidate Management</h1>
-        <p>Review candidate interviews and manage users</p>
+        <p>Search, filter, and rank interview candidates</p>
       </div>
 
-      <div class="table-container" style="background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border-color); overflow: hidden; margin-top: 24px;">
+      <!-- ═══ Filters Bar ═══ -->
+      <div class="recruiter-filters" style="
+        display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+        margin-top: 20px; padding: 16px; background: var(--bg-card);
+        border: 1px solid var(--border-color); border-radius: 12px;
+      ">
+        <!-- Search -->
+        <div style="flex: 1; min-width: 220px;">
+          <input type="text" id="rc-search" placeholder="🔍 Search name or email..."
+            style="
+              width: 100%; padding: 10px 14px; border-radius: 8px;
+              border: 1px solid var(--border-color); background: var(--bg-main);
+              color: var(--text-primary); font-size: 0.9rem;
+            " />
+        </div>
+
+        <!-- Status Filter -->
+        <select id="rc-status" style="
+          padding: 10px 14px; border-radius: 8px;
+          border: 1px solid var(--border-color); background: var(--bg-main);
+          color: var(--text-primary); font-size: 0.85rem; min-width: 140px;
+        ">
+          <option value="">All Statuses</option>
+          <option value="completed">Completed</option>
+          <option value="in_progress">In Progress</option>
+          <option value="pending">Pending</option>
+          <option value="questions_generated">Questions Ready</option>
+        </select>
+
+        <!-- Score Range -->
+        <select id="rc-score-range" style="
+          padding: 10px 14px; border-radius: 8px;
+          border: 1px solid var(--border-color); background: var(--bg-main);
+          color: var(--text-primary); font-size: 0.85rem; min-width: 140px;
+        ">
+          <option value="">All Scores</option>
+          <option value="0-4">0 – 4 (Low)</option>
+          <option value="4-6">4 – 6 (Below Avg)</option>
+          <option value="6-8">6 – 8 (Good)</option>
+          <option value="8-10">8 – 10 (Excellent)</option>
+        </select>
+
+        <!-- Skills Multi-Select -->
+        <div class="rc-skills-wrapper" style="position: relative; min-width: 180px;">
+          <button id="rc-skills-btn" style="
+            padding: 10px 14px; border-radius: 8px;
+            border: 1px solid var(--border-color); background: var(--bg-main);
+            color: var(--text-primary); font-size: 0.85rem; cursor: pointer;
+            width: 100%; text-align: left;
+          ">🏷️ Skills <span id="rc-skills-count"></span></button>
+          <div id="rc-skills-dropdown" style="
+            display: none; position: absolute; top: 100%; left: 0; z-index: 100;
+            margin-top: 4px; background: var(--bg-card); border: 1px solid var(--border-color);
+            border-radius: 8px; max-height: 240px; overflow-y: auto; min-width: 220px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.4); padding: 8px;
+          "></div>
+        </div>
+
+        <!-- Reset -->
+        <button id="rc-reset-btn" style="
+          padding: 10px 14px; border-radius: 8px; border: 1px solid var(--accent-gold);
+          background: transparent; color: var(--accent-gold); font-size: 0.85rem;
+          cursor: pointer; font-weight: 500;
+        ">↻ Reset</button>
+      </div>
+
+      <!-- ═══ Candidate Table ═══ -->
+      <div class="rc-table-wrapper" style="
+        margin-top: 20px; background: var(--bg-card);
+        border: 1px solid var(--border-color); border-radius: 12px;
+        overflow: hidden;
+      ">
+        <div style="overflow-x: auto;">
+          <table id="rc-table" style="width: 100%; border-collapse: collapse; text-align: left; min-width: 900px;">
+            <thead style="background: var(--bg-hover); border-bottom: 1px solid var(--border-color);">
+              <tr>
+                <th class="rc-th rc-sortable" data-sort="name" style="padding: 14px 16px; color: var(--text-muted); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; user-select: none;">
+                  Name <span class="sort-icon"></span>
+                </th>
+                <th class="rc-th rc-sortable" data-sort="score" style="padding: 14px 16px; color: var(--text-muted); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; user-select: none;">
+                  Score <span class="sort-icon"></span>
+                </th>
+                <th class="rc-th" style="padding: 14px 16px; color: var(--text-muted); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px;">
+                  Skills
+                </th>
+                <th class="rc-th" style="padding: 14px 16px; color: var(--text-muted); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px;">
+                  Status
+                </th>
+                <th class="rc-th" style="padding: 14px 16px; color: var(--text-muted); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px;">
+                  Pipeline
+                </th>
+                <th class="rc-th" style="padding: 14px 16px; color: var(--text-muted); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px;">
+                  Recommendation
+                </th>
+                <th class="rc-th rc-sortable" data-sort="date" style="padding: 14px 16px; color: var(--text-muted); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; user-select: none;">
+                  Date <span class="sort-icon"></span>
+                </th>
+                <th class="rc-th" style="padding: 14px 16px; color: var(--text-muted); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px;">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody id="rc-table-body">
+              <tr><td colspan="8" style="padding: 40px; text-align: center; color: var(--text-muted);">Loading candidates...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination -->
+        <div id="rc-pagination" style="
+          display: flex; align-items: center; justify-content: space-between;
+          padding: 14px 16px; border-top: 1px solid var(--border-color);
+        ">
+          <span id="rc-page-info" style="color: var(--text-muted); font-size: 0.85rem;"></span>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <button id="rc-prev-btn" class="btn btn-sm btn-outline" style="
+              padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border-color);
+              background: transparent; color: var(--text-primary); cursor: pointer; font-size: 0.85rem;
+            ">← Previous</button>
+            <span id="rc-page-num" style="color: var(--accent-gold); font-weight: 600; font-size: 0.9rem;"></span>
+            <button id="rc-next-btn" class="btn btn-sm btn-outline" style="
+              padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border-color);
+              background: transparent; color: var(--text-primary); cursor: pointer; font-size: 0.85rem;
+            ">Next →</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ User Management Section ═══ -->
+      <h2 style="margin-top: 40px; margin-bottom: 16px; font-size: 1.2rem;">User Management</h2>
+      <div class="table-container" style="background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border-color); overflow: hidden;">
         <table style="width: 100%; border-collapse: collapse; text-align: left;">
           <thead style="background: var(--bg-hover); border-bottom: 1px solid var(--border-color);">
             <tr>
-              <th style="padding: 16px; color: var(--text-muted); font-weight: 500;">Name</th>
-              <th style="padding: 16px; color: var(--text-muted); font-weight: 500;">Email</th>
-              <th style="padding: 16px; color: var(--text-muted); font-weight: 500;">Role</th>
-              <th style="padding: 16px; color: var(--text-muted); font-weight: 500;">Status</th>
-              <th style="padding: 16px; color: var(--text-muted); font-weight: 500;">Actions</th>
+              <th style="padding: 14px 16px; color: var(--text-muted); font-weight: 500; font-size: 0.85rem;">Name</th>
+              <th style="padding: 14px 16px; color: var(--text-muted); font-weight: 500; font-size: 0.85rem;">Email</th>
+              <th style="padding: 14px 16px; color: var(--text-muted); font-weight: 500; font-size: 0.85rem;">Role</th>
+              <th style="padding: 14px 16px; color: var(--text-muted); font-weight: 500; font-size: 0.85rem;">Status</th>
+              <th style="padding: 14px 16px; color: var(--text-muted); font-weight: 500; font-size: 0.85rem;">Actions</th>
             </tr>
           </thead>
           <tbody id="user-table-body">
-            <tr><td colspan="5" style="padding: 20px; text-align: center;">Loading users...</td></tr>
+            <tr><td colspan="5" style="padding: 20px; text-align: center; color: var(--text-muted);">Loading users...</td></tr>
           </tbody>
         </table>
       </div>
-      
-      <h2 style="margin-top: 32px; margin-bottom: 16px;">Recent Sessions</h2>
-      <div id="session-list"></div>
     </div>
   `;
-  
+
   layout.appendChild(main);
   container.appendChild(layout);
 
+  // ── Initialize ──
+  _bindEvents(main);
+  await _loadAvailableSkills();
+  await _fetchCandidates(main);
+  await _loadUsers(main);
+}
+
+
+// ── Event Bindings ─────────────────────────────────────────────────────────────
+function _bindEvents(main) {
+  // Search (debounced)
+  const searchInput = main.querySelector('#rc-search');
+  searchInput.addEventListener('input', () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      state.search = searchInput.value.trim();
+      state.page = 1;
+      _fetchCandidates(main);
+    }, 350);
+  });
+
+  // Status filter
+  main.querySelector('#rc-status').addEventListener('change', (e) => {
+    state.status = e.target.value;
+    state.page = 1;
+    _fetchCandidates(main);
+  });
+
+  // Score range filter
+  main.querySelector('#rc-score-range').addEventListener('change', (e) => {
+    const val = e.target.value;
+    if (val) {
+      const [min, max] = val.split('-').map(Number);
+      state.minScore = min;
+      state.maxScore = max;
+    } else {
+      state.minScore = null;
+      state.maxScore = null;
+    }
+    state.page = 1;
+    _fetchCandidates(main);
+  });
+
+  // Skills dropdown toggle
+  const skillsBtn = main.querySelector('#rc-skills-btn');
+  const skillsDropdown = main.querySelector('#rc-skills-dropdown');
+  skillsBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    skillsDropdown.style.display = skillsDropdown.style.display === 'none' ? 'block' : 'none';
+  });
+  document.addEventListener('click', () => {
+    skillsDropdown.style.display = 'none';
+  });
+  skillsDropdown.addEventListener('click', (e) => e.stopPropagation());
+
+  // Sort columns
+  main.querySelectorAll('.rc-sortable').forEach(th => {
+    th.addEventListener('click', () => {
+      const field = th.dataset.sort;
+      if (state.sortBy === field) {
+        state.sortOrder = state.sortOrder === 'asc' ? 'desc' : 'asc';
+      } else {
+        state.sortBy = field;
+        state.sortOrder = field === 'name' ? 'asc' : 'desc';
+      }
+      state.page = 1;
+      _fetchCandidates(main);
+    });
+  });
+
+  // Pagination
+  main.querySelector('#rc-prev-btn').addEventListener('click', () => {
+    if (state.page > 1) {
+      state.page--;
+      _fetchCandidates(main);
+    }
+  });
+  main.querySelector('#rc-next-btn').addEventListener('click', () => {
+    if (state.page < state.totalPages) {
+      state.page++;
+      _fetchCandidates(main);
+    }
+  });
+
+  // Reset filters
+  main.querySelector('#rc-reset-btn').addEventListener('click', () => {
+    state.search = '';
+    state.status = '';
+    state.minScore = null;
+    state.maxScore = null;
+    state.skills = [];
+    state.sortBy = 'date';
+    state.sortOrder = 'desc';
+    state.page = 1;
+
+    main.querySelector('#rc-search').value = '';
+    main.querySelector('#rc-status').value = 'completed';
+    main.querySelector('#rc-score-range').value = '';
+    _renderSkillsDropdown(main);
+    _fetchCandidates(main);
+  });
+}
+
+
+// ── Fetch Candidates ───────────────────────────────────────────────────────────
+async function _fetchCandidates(main) {
+  state.loading = true;
+  _renderLoading(main);
+
   try {
-    const [usersRes, history] = await Promise.all([
-      auth.listUsers(),
-      analytics.history()
-    ]);
-    
-    // Render Users
+    const params = new URLSearchParams();
+    params.set('page', state.page);
+    params.set('page_size', state.pageSize);
+    params.set('sort_by', state.sortBy);
+    params.set('sort_order', state.sortOrder);
+
+    if (state.search) params.set('search', state.search);
+    if (state.status) params.set('status', state.status);
+    if (state.minScore !== null) params.set('min_score', state.minScore);
+    if (state.maxScore !== null) params.set('max_score', state.maxScore);
+    if (state.skills.length > 0) params.set('skills', state.skills.join(','));
+
+    const data = await apiJSON(`/recruiter/candidates?${params.toString()}`);
+
+    state.candidates = data.candidates || [];
+    state.totalCount = data.total_count || 0;
+    state.page = data.page || 1;
+    state.totalPages = data.total_pages || 1;
+
+    _renderTable(main);
+    _renderPagination(main);
+    _updateSortIcons(main);
+  } catch (err) {
+    Toast.error(err.message, 'Load Candidates');
+    _renderEmpty(main, 'Failed to load candidates');
+  } finally {
+    state.loading = false;
+  }
+}
+
+
+// ── Load Available Skills ──────────────────────────────────────────────────────
+async function _loadAvailableSkills() {
+  try {
+    const data = await apiJSON('/recruiter/candidates/skills');
+    state.availableSkills = data.skills || [];
+  } catch {
+    state.availableSkills = [];
+  }
+}
+
+
+// ── Render Table ───────────────────────────────────────────────────────────────
+function _renderTable(main) {
+  const tbody = main.querySelector('#rc-table-body');
+
+  if (!state.candidates.length) {
+    _renderEmpty(main, 'No candidates match your filters');
+    return;
+  }
+
+  tbody.innerHTML = '';
+  state.candidates.forEach(c => {
+    const tr = document.createElement('tr');
+    tr.style.borderBottom = '1px solid var(--border-color)';
+    tr.style.transition = 'background 0.15s';
+    tr.addEventListener('mouseenter', () => tr.style.background = 'var(--bg-hover)');
+    tr.addEventListener('mouseleave', () => tr.style.background = 'transparent');
+
+    const score = c.average_score;
+    const scoreColor = _getScoreColor(score);
+    const scoreDisplay = score !== null ? score.toFixed(1) : '—';
+
+    const skillsBadges = (c.skills_detected || []).slice(0, 4).map(s =>
+      `<span style="
+        display: inline-block; padding: 2px 8px; border-radius: 4px;
+        background: rgba(245, 184, 0, 0.1); border: 1px solid rgba(245, 184, 0, 0.3);
+        color: var(--accent-gold); font-size: 0.72rem; margin: 2px 3px 2px 0;
+      ">${_escapeHtml(s)}</span>`
+    ).join('');
+    const moreSkills = (c.skills_detected || []).length > 4
+      ? `<span style="color: var(--text-muted); font-size: 0.72rem;">+${c.skills_detected.length - 4}</span>`
+      : '';
+
+    const statusBadge = _getStatusBadge(c.status);
+    const pipelineBadge = _getPipelineBadge(c.pipeline_stage);
+
+    const dateStr = c.created_at
+      ? new Date(c.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      : '—';
+
+    tr.innerHTML = `
+      <td style="padding: 14px 16px;">
+        <div style="font-weight: 500; color: var(--text-primary);">${_escapeHtml(c.candidate_name)}</div>
+        <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 2px;">${c.email ? _escapeHtml(c.email) : '—'}</div>
+      </td>
+      <td style="padding: 14px 16px;">
+        <span style="
+          display: inline-block; padding: 4px 10px; border-radius: 6px;
+          font-weight: 700; font-size: 0.9rem; color: ${scoreColor};
+          background: ${scoreColor}15; border: 1px solid ${scoreColor}40;
+        ">${scoreDisplay}</span>
+      </td>
+      <td style="padding: 14px 16px; max-width: 220px;">
+        ${skillsBadges}${moreSkills}
+      </td>
+      <td style="padding: 14px 16px;">
+        ${statusBadge}
+      </td>
+      <td style="padding: 14px 16px;">
+        ${pipelineBadge}
+      </td>
+      <td style="padding: 14px 16px;">
+        <span style="
+          font-size: 0.82rem; font-weight: 600;
+          color: ${c.recommendation && c.recommendation.toLowerCase().includes('strong') ? 'var(--accent-emerald)' :
+                  c.recommendation && c.recommendation.toLowerCase().includes('no') ? 'var(--accent-red)' :
+                  c.recommendation && c.recommendation.toLowerCase().includes('hire') ? 'var(--accent-amber)' : 'var(--text-muted)'};
+        ">${c.recommendation || '—'}</span>
+      </td>
+      <td style="padding: 14px 16px; color: var(--text-muted); font-size: 0.85rem;">
+        ${dateStr}
+      </td>
+      <td style="padding: 14px 16px;">
+        <button class="rc-view-btn" data-sid="${c.session_id}" style="
+          padding: 6px 12px; border-radius: 6px; border: 1px solid var(--accent-gold);
+          background: transparent; color: var(--accent-gold); font-size: 0.8rem;
+          cursor: pointer; font-weight: 500; transition: all 0.15s;
+        ">View Summary</button>
+      </td>
+    `;
+
+    tbody.appendChild(tr);
+  });
+
+  // Bind view buttons
+  tbody.querySelectorAll('.rc-view-btn').forEach(btn => {
+    btn.addEventListener('mouseenter', () => {
+      btn.style.background = 'var(--accent-gold)';
+      btn.style.color = '#1a1a2e';
+    });
+    btn.addEventListener('mouseleave', () => {
+      btn.style.background = 'transparent';
+      btn.style.color = 'var(--accent-gold)';
+    });
+    btn.addEventListener('click', () => {
+      navigate(`/interview/summary/${btn.dataset.sid}`);
+    });
+  });
+}
+
+
+// ── Render Helpers ─────────────────────────────────────────────────────────────
+
+function _renderLoading(main) {
+  const tbody = main.querySelector('#rc-table-body');
+  tbody.innerHTML = `
+    <tr><td colspan="7" style="padding: 40px; text-align: center; color: var(--text-muted);">
+      <div style="display: inline-block; width: 20px; height: 20px; border: 2px solid var(--accent-gold); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+      <div style="margin-top: 8px;">Loading candidates...</div>
+    </td></tr>
+  `;
+}
+
+function _renderEmpty(main, message) {
+  const tbody = main.querySelector('#rc-table-body');
+  tbody.innerHTML = `
+    <tr><td colspan="7" style="padding: 50px; text-align: center; color: var(--text-muted);">
+      <div style="font-size: 2rem; margin-bottom: 8px;">📋</div>
+      <div>${message}</div>
+    </td></tr>
+  `;
+}
+
+function _renderPagination(main) {
+  const info = main.querySelector('#rc-page-info');
+  const pageNum = main.querySelector('#rc-page-num');
+  const prevBtn = main.querySelector('#rc-prev-btn');
+  const nextBtn = main.querySelector('#rc-next-btn');
+
+  const start = ((state.page - 1) * state.pageSize) + 1;
+  const end = Math.min(state.page * state.pageSize, state.totalCount);
+
+  info.textContent = state.totalCount > 0
+    ? `Showing ${start}–${end} of ${state.totalCount} candidates`
+    : 'No results';
+
+  pageNum.textContent = `Page ${state.page} / ${state.totalPages}`;
+
+  prevBtn.disabled = state.page <= 1;
+  nextBtn.disabled = state.page >= state.totalPages;
+
+  prevBtn.style.opacity = state.page <= 1 ? '0.4' : '1';
+  nextBtn.style.opacity = state.page >= state.totalPages ? '0.4' : '1';
+}
+
+function _updateSortIcons(main) {
+  main.querySelectorAll('.rc-sortable .sort-icon').forEach(icon => {
+    icon.textContent = '';
+  });
+
+  const activeTh = main.querySelector(`.rc-sortable[data-sort="${state.sortBy}"]`);
+  if (activeTh) {
+    const icon = activeTh.querySelector('.sort-icon');
+    icon.textContent = state.sortOrder === 'asc' ? ' ↑' : ' ↓';
+    icon.style.color = 'var(--accent-gold)';
+  }
+}
+
+function _renderSkillsDropdown(main) {
+  const dropdown = main.querySelector('#rc-skills-dropdown');
+  const countSpan = main.querySelector('#rc-skills-count');
+
+  if (!state.availableSkills.length) {
+    dropdown.innerHTML = '<div style="padding: 12px; color: var(--text-muted); font-size: 0.85rem;">No skills found</div>';
+    countSpan.textContent = '';
+    return;
+  }
+
+  dropdown.innerHTML = state.availableSkills.map(skill => {
+    const checked = state.skills.includes(skill) ? 'checked' : '';
+    return `
+      <label style="
+        display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+        border-radius: 4px; cursor: pointer; font-size: 0.85rem; color: var(--text-primary);
+      " class="rc-skill-option">
+        <input type="checkbox" value="${_escapeHtml(skill)}" ${checked}
+          style="accent-color: var(--accent-gold);" />
+        ${_escapeHtml(skill)}
+      </label>
+    `;
+  }).join('');
+
+  // Bind checkboxes
+  dropdown.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      if (cb.checked) {
+        if (!state.skills.includes(cb.value)) state.skills.push(cb.value);
+      } else {
+        state.skills = state.skills.filter(s => s !== cb.value);
+      }
+      countSpan.textContent = state.skills.length > 0 ? `(${state.skills.length})` : '';
+      state.page = 1;
+      _fetchCandidates(main);
+    });
+  });
+
+  countSpan.textContent = state.skills.length > 0 ? `(${state.skills.length})` : '';
+}
+
+
+// ── Score Color Logic ──────────────────────────────────────────────────────────
+function _getScoreColor(score) {
+  if (score === null || score === undefined) return 'var(--text-muted)';
+  if (score < 5) return '#ef4444';        // Red
+  if (score < 6.5) return '#f59e0b';      // Amber
+  if (score < 8) return '#f5b800';        // Gold (accent)
+  return '#10b981';                        // Green
+}
+
+
+// ── Status Badge ───────────────────────────────────────────────────────────────
+function _getStatusBadge(status) {
+  const config = {
+    completed: { label: 'Completed', bg: 'rgba(16, 185, 129, 0.1)', color: '#10b981', border: 'rgba(16, 185, 129, 0.3)' },
+    in_progress: { label: 'In Progress', bg: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6', border: 'rgba(59, 130, 246, 0.3)' },
+    created: { label: 'Pending', bg: 'rgba(107, 114, 128, 0.1)', color: '#6b7280', border: 'rgba(107, 114, 128, 0.3)' },
+    questions_generated: { label: 'Ready', bg: 'rgba(245, 184, 0, 0.1)', color: '#f5b800', border: 'rgba(245, 184, 0, 0.3)' },
+  };
+  const c = config[status] || config.created;
+  return `<span style="
+    display: inline-block; padding: 3px 10px; border-radius: 20px;
+    font-size: 0.75rem; font-weight: 500;
+    background: ${c.bg}; color: ${c.color}; border: 1px solid ${c.border};
+  ">${c.label}</span>`;
+}
+
+
+// ── Pipeline Stage Badge ───────────────────────────────────────────────────────
+function _getPipelineBadge(stage) {
+  const config = {
+    screening: { label: '📋 Screening', color: '#6b7280' },
+    interview: { label: '🎤 Interview', color: '#3b82f6' },
+    evaluation: { label: '📊 Evaluation', color: '#f59e0b' },
+    decision: { label: '⚖️ Decision', color: '#8b5cf6' },
+    hired: { label: '✅ Hired', color: '#10b981' },
+    rejected: { label: '❌ Rejected', color: '#ef4444' },
+  };
+  const c = config[stage] || config.screening;
+  return `<span style="font-size: 0.8rem; color: ${c.color}; font-weight: 500;">${c.label}</span>`;
+}
+
+
+// ── Load Users (existing functionality preserved) ──────────────────────────────
+async function _loadUsers(main) {
+  try {
+    const usersRes = await auth.listUsers();
     const tbody = main.querySelector('#user-table-body');
     const users = usersRes.users || [];
+
     if (users.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" style="padding: 20px; text-align: center;">No users found</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="5" style="padding: 20px; text-align: center; color: var(--text-muted);">No users found</td></tr>';
     } else {
       tbody.innerHTML = '';
       users.forEach(u => {
@@ -69,19 +614,32 @@ export async function renderRecruiterDashboard(container) {
         tr.style.borderBottom = '1px solid var(--border-color)';
         const isActive = u.is_active;
         tr.innerHTML = `
-          <td style="padding: 16px;">${u.name}</td>
-          <td style="padding: 16px; color: var(--text-muted);">${u.email}</td>
-          <td style="padding: 16px;"><span class="badge badge-gray">${u.role}</span></td>
-          <td style="padding: 16px;">
-             <span class="badge ${isActive ? 'badge-emerald' : 'badge-red'}">${isActive ? 'Active' : 'Inactive'}</span>
+          <td style="padding: 14px 16px; font-weight: 500;">${_escapeHtml(u.name)}</td>
+          <td style="padding: 14px 16px; color: var(--text-muted);">${_escapeHtml(u.email)}</td>
+          <td style="padding: 14px 16px;"><span class="badge badge-gray" style="
+            padding: 3px 10px; border-radius: 20px; font-size: 0.75rem;
+            background: rgba(107, 114, 128, 0.1); color: #9ca3af; border: 1px solid rgba(107, 114, 128, 0.3);
+          ">${u.role}</span></td>
+          <td style="padding: 14px 16px;">
+            <span style="
+              display: inline-block; padding: 3px 10px; border-radius: 20px;
+              font-size: 0.75rem; font-weight: 500;
+              background: ${isActive ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)'};
+              color: ${isActive ? '#10b981' : '#ef4444'};
+              border: 1px solid ${isActive ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'};
+            ">${isActive ? 'Active' : 'Inactive'}</span>
           </td>
-          <td style="padding: 16px;">
-              ${isActive && u.role === 'candidate' ? `<button class="btn btn-sm btn-outline deactivate-btn" data-id="${u.id}" style="color: var(--accent-red); border-color: var(--accent-red); padding: 4px 8px; font-size: 0.8rem;">Deactivate</button>` : ''}
+          <td style="padding: 14px 16px;">
+            ${isActive && u.role === 'candidate' ? `<button class="deactivate-btn" data-id="${u.id}" style="
+              padding: 5px 10px; border-radius: 6px; border: 1px solid #ef4444;
+              background: transparent; color: #ef4444; font-size: 0.78rem;
+              cursor: pointer;
+            ">Deactivate</button>` : ''}
           </td>
         `;
         tbody.appendChild(tr);
       });
-      
+
       // Deactivate logic
       tbody.querySelectorAll('.deactivate-btn').forEach(btn => {
         btn.onclick = async () => {
@@ -89,7 +647,9 @@ export async function renderRecruiterDashboard(container) {
           try {
             await auth.deactivateUser(btn.dataset.id);
             Toast.success('User deactivated successfully');
-            btn.parentElement.previousElementSibling.innerHTML = '<span class="badge badge-red">Inactive</span>';
+            btn.parentElement.previousElementSibling.querySelector('span').style.background = 'rgba(239, 68, 68, 0.1)';
+            btn.parentElement.previousElementSibling.querySelector('span').style.color = '#ef4444';
+            btn.parentElement.previousElementSibling.querySelector('span').textContent = 'Inactive';
             btn.remove();
           } catch (err) {
             Toast.error(err.message, 'Deactivate');
@@ -97,42 +657,20 @@ export async function renderRecruiterDashboard(container) {
         };
       });
     }
-
-    // Render Sessions
-    const listEl = main.querySelector('#session-list');
-    const sessions = history?.sessions || history || [];
-    if (!sessions.length) {
-      listEl.innerHTML = `<div class="empty-state">No interview sessions found</div>`;
-      return;
-    }
-
-    listEl.innerHTML = '';
-    sessions.slice(0, 10).forEach(s => {
-      const score     = s.average_score ?? 0;
-      const status    = s.status || 'pending';
-      const date      = s.created_at ? new Date(s.created_at).toLocaleDateString() : '—';
-      const isPass    = score >= 7;
-
-      const card = document.createElement('div');
-      card.className = 'session-card';
-      card.style.cursor = 'pointer';
-      card.innerHTML = `
-        <div class="session-card-info">
-          <div class="session-card-name">${s.candidate_name || 'Candidate'} — Session</div>
-          <div class="session-card-meta">
-            <span>🗓 ${date}</span>
-            <span class="badge ${status === 'completed' ? 'badge-emerald' : 'badge-gray'}">${status}</span>
-          </div>
-        </div>
-        <div class="session-card-score ${status !== 'completed' ? 'pending' : isPass ? 'pass' : 'fail'}">
-          ${status !== 'completed' ? '—' : score.toFixed(1)}
-        </div>
-      `;
-      card.onclick = () => navigate(`/interview/summary/${s.session_id}`);
-      listEl.appendChild(card);
-    });
-    
   } catch (err) {
-    Toast.error(err.message, 'Recruiter Dashboard');
+    Toast.error(err.message, 'Load Users');
   }
+
+  // After loading skills, render skills dropdown
+  const main2 = main; // closure
+  _renderSkillsDropdown(main2);
+}
+
+
+// ── Utilities ──────────────────────────────────────────────────────────────────
+function _escapeHtml(str) {
+  if (!str) return '';
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
 }

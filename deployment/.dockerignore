@@ -1,0 +1,87 @@
+# ============================================================
+# AI Interview Assistant — .dockerignore
+# Keeps Docker build context minimal for fast builds
+# ============================================================
+
+# ── Version Control ─────────────────────────────────────────
+.git
+.gitignore
+.gitmodules
+
+# ── Node.js ─────────────────────────────────────────────────
+node_modules
+frontend/node_modules
+**/node_modules
+
+# ── Python ──────────────────────────────────────────────────
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# ── IDE / Editor ────────────────────────────────────────────
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ── Docker ──────────────────────────────────────────────────
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# ── CI/CD ───────────────────────────────────────────────────
+.github
+.gitlab-ci.yml
+
+# ── Environment & Secrets ───────────────────────────────────
+.env
+.env.*
+!.env.production.example
+*.pem
+*.key
+ssl/
+
+# ── Testing & Coverage ─────────────────────────────────────
+tests/
+htmlcov/
+.coverage
+coverage.xml
+pytest.ini
+.pytest_cache/
+junit-report.xml
+
+# ── Documentation ───────────────────────────────────────────
+*.md
+!README.md
+docs/
+ISSUES_REPORT.md
+TECHNICAL_REPORT.md
+
+# ── Logs & Data ─────────────────────────────────────────────
+logs/
+*.log
+backups/
+uploads/
+
+# ── OS Files ────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.tmp
+*.bak
+
+# ── Scripts (not needed in containers) ──────────────────────
+deploy.sh
+start.ps1
+run_backend.py
+run_frontend.py

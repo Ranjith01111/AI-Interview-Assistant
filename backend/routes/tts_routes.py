@@ -6,10 +6,14 @@ Falls back to gTTS if edge-tts is unavailable.
 
 import io
 import asyncio
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request, Depends
 from fastapi.responses import StreamingResponse
 
-router = APIRouter(prefix="/tts", tags=["TTS"])
+from backend.core.security import get_current_active_user
+from backend.core.rate_limiter import limiter
+from backend.models.user import User
+
+router = APIRouter(prefix="/tts", tags=["TTS"], dependencies=[Depends(get_current_active_user)])
 
 # Try edge-tts first, then gTTS
 _engine = None
@@ -40,7 +44,8 @@ async def _get_engine():
 
 
 @router.get("/speak")
-async def speak_text(text: str = Query(..., max_length=500)):
+@limiter.limit("20/minute")
+async def speak_text(request: Request, text: str = Query(..., max_length=500)):
     """
     Convert text to speech audio (MP3).
     Returns audio/mpeg stream.

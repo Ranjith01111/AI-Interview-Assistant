@@ -26,21 +26,24 @@ def configure_cors(app: Starlette) -> None:
     """
     Attach CORS middleware to the FastAPI/Starlette application.
 
-    In development (DEBUG=True) all origins are allowed.
+    In development (DEBUG=True) allowed origins are set explicitly
+    (NOT wildcard "*") to safely support credentials.
     In production the origins are restricted to ALLOWED_ORIGINS.
     """
-    origins = (
-        ["*"]
-        if settings.DEBUG
-        else settings.allowed_origins_list
-    )
+    # SECURITY FIX: Never use allow_origins=["*"] with allow_credentials=True
+    # Browsers reject Set-Cookie headers when origin is wildcard.
+    # In DEBUG mode, use the explicit ALLOWED_ORIGINS list (which defaults to
+    # localhost:8501, localhost:3000, localhost:5173).
+    origins = settings.allowed_origins_list
+    if settings.DEBUG and not origins:
+        origins = ["http://localhost:5173", "http://localhost:3000", "http://localhost:8000"]
 
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-API-Key"],
     )
 
 
@@ -92,6 +95,7 @@ async def get_current_user(
 
     if not token:
         if settings.DEBUG:
+            logger.warning("debug_fallback_user_created", note="Auth bypassed in DEBUG mode — NEVER use in production")
             # Fallback to dev user in local debug mode
             query = select(User).where(User.email == "dev@example.com")
             result = await db.execute(query)
@@ -101,7 +105,7 @@ async def get_current_user(
                     name="Dev User",
                     email="dev@example.com",
                     password_hash="dev-hash-not-used",
-                    role=UserRole.CANDIDATE.value,
+                    role=UserRole.CANDIDATE.value,  # SECURITY: Dev user is CANDIDATE only, never admin
                     is_active=True
                 )
                 db.add(user)

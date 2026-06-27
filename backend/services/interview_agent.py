@@ -213,6 +213,16 @@ class InterviewAgent:
                     db_session.status = SessionStatus.COMPLETED.value
                     avg = sum(sc["score"] for sc in s.scores) / max(len(s.scores), 1)
                     db_session.average_score = avg
+                    # Save recommendation based on score
+                    if avg >= 8.0:
+                        db_session.recommendation = "Strong Hire"
+                    elif avg >= 6.5:
+                        db_session.recommendation = "Hire"
+                    elif avg >= 5.0:
+                        db_session.recommendation = "Maybe — needs improvement"
+                    else:
+                        db_session.recommendation = "No Hire"
+                    db_session.overall_feedback = f"Interview completed. {len(s.scores)} questions answered with average score {avg:.1f}/10."
             except Exception as e:
                 logger.error("failed_to_update_session_status", error=str(e))
         else:

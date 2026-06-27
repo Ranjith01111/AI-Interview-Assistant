@@ -1,82 +1,69 @@
-# ============================================
+
+# ── Agentic AI (Ollama HTTP client) ──────────────────────────────
+httpx==0.27.0
+
 # AI Interview Assistant - Dependencies
-# Production-Ready v2.0
+# Production v2.1 (Local NLP — no external APIs)
 # ============================================
 
-# Backend Framework
+# ── Backend Framework ──────────────────────────────────────
 fastapi==0.111.0
 uvicorn[standard]==0.30.1
 
-# AI / LangChain / RAG
-langchain==0.2.6
-langchain-openai==0.1.13
-langchain-community==0.2.6
-openai==1.35.7
-faiss-cpu==1.8.0
-
-# PDF Parsing
+# ── PDF Parsing ────────────────────────────────────────────
 pypdf==4.2.0
 
-# Data Validation
+# ── Data Validation ────────────────────────────────────────
 pydantic==2.7.4
 pydantic-settings==2.3.4
-# TTS for voice interview
+
+# ── TTS for voice interview ────────────────────────────────
 edge-tts==6.1.12
 
-# Frontend
-streamlit==1.36.0
-
-# HTTP Client (for frontend -> backend communication)
-requests==2.32.3
-httpx==0.27.0
-
-# Environment Variables
+# ── Environment Variables ──────────────────────────────────
 python-dotenv==1.0.1
 
-# File uploads
+# ── File uploads ───────────────────────────────────────────
 python-multipart==0.0.9
 
-# Utilities
-tiktoken==0.7.0
-numpy==1.26.4
-
-# ============================================
-# NEW — Production Infrastructure
-# ============================================
-
-# Database (PostgreSQL + Async)
+# ── Database (PostgreSQL + Async) ──────────────────────────
 sqlalchemy[asyncio]==2.0.31
 asyncpg==0.29.0
 
-# Migrations
+# ── Migrations ─────────────────────────────────────────────
 alembic==1.13.1
 
-# Redis (Async)
+# ── Redis (Async) ──────────────────────────────────────────
 redis[hiredis]==5.0.7
 
-# Async file handling
+# ── Async file handling ────────────────────────────────────
 aiofiles==24.1.0
 
-# Structured Logging
+# ── Structured Logging ─────────────────────────────────────
 structlog==24.4.0
 
-# ============================================
-# Authentication & Security
-# ============================================
-
-# JWT Token handling
+# ── Authentication & Security ──────────────────────────────
 PyJWT==2.9.0
-
-# Password hashing (bcrypt)
 bcrypt==4.2.0
-
-# JOSE / JWS support (FastAPI Security integration)
 python-jose[cryptography]==3.3.0
 
-# Rate limiting middleware
+# ── Rate limiting middleware ───────────────────────────────
 slowapi==0.1.9
 
-# AI Proctoring System Dependencies
+# ── AI Proctoring (face detection, gaze tracking) ─────────
 opencv-python-headless==4.9.0.80
 mediapipe==0.10.13
+numpy==1.26.4
 
+# ── Testing (dev only) ────────────────────────────────────
+# pytest==8.2.0
+# pytest-asyncio==0.23.7
+# httpx==0.27.0  # for TestClient
+
+# ============================================
+# REMOVED (no longer needed — local NLP engine):
+#   langchain, langchain-openai, langchain-community
+#   openai, faiss-cpu, tiktoken
+#   streamlit (replaced by Vite frontend)
+#   requests, httpx (no external API calls)
+# ============================================

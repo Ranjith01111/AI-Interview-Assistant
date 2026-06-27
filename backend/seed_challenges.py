@@ -586,36 +586,59 @@ int main() {
 
 
 async def seed_default_challenges(db: AsyncSession):
-    """Insert challenges if they don't exist. Called from startup or manually."""
+    """Insert challenges if table is empty. Bulletproof — never crashes the app."""
     from backend.models.coding_challenge import CodingChallenge
-    from sqlalchemy import delete
-    from backend.models.coding_submission import CodingSubmission
+    from sqlalchemy import text, func
+    from sqlalchemy import select as sa_select
 
-    # Delete old and re-seed fresh (ensures test_cases are always correct)
+    # Step 1: Check if table has data
     try:
-        await db.execute(delete(CodingSubmission))
-        await db.execute(delete(CodingChallenge))
-        await db.flush()
-    except Exception:
-        await db.rollback()
+        result = await db.execute(sa_select(func.count(CodingChallenge.id)))
+        count = result.scalar() or 0
+        if count >= len(CHALLENGES):
+            return 0
+    except Exception as e:
+        print(f"⚠️  coding_challenges check failed ({e}) — skipping seed to prevent duplicates")
+        return 0
 
+    # Step 2: Insert each challenge
     added = 0
     for ch in CHALLENGES:
-        challenge = CodingChallenge(
-            id=uuid.uuid4(),
-            title=ch["title"],
-            difficulty=ch["difficulty"],
-            description=ch["description"],
-            time_limit=ch["time_limit"],
-            memory_limit=ch["memory_limit"],
-            template_code=ch["template_code"],
-            test_cases=ch["test_cases"],
-        )
-        db.add(challenge)
-        added += 1
+        try:
+            # Check duplicate by title
+            dup = await db.execute(
+                sa_select(CodingChallenge.id).where(CodingChallenge.title == ch["title"]).limit(1)
+            )
+            if dup.scalar_one_or_none() is not None:
+                continue
+        except Exception:
+            continue  # If duplicate check fails, SKIP instead of blindly inserting
 
-    if added:
-        await db.commit()
+        try:
+            challenge = CodingChallenge(
+                id=uuid.uuid4(),
+                title=ch["title"],
+                difficulty=ch["difficulty"],
+                description=ch["description"],
+                time_limit=ch["time_limit"],
+                memory_limit=ch["memory_limit"],
+                template_code=ch["template_code"],
+                test_cases=ch["test_cases"],
+            )
+            db.add(challenge)
+            added += 1
+        except Exception as e:
+            print(f"⚠️  Failed to add '{ch['title']}': {e}")
+
+    # Step 3: Commit
+    if added > 0:
+        try:
+            await db.commit()
+        except Exception as e:
+            print(f"⚠️  Seed commit failed: {e}")
+            await db.rollback()
+            return 0
+        print(f"✅ Seeded {added} coding challenges")
     return added
 
 

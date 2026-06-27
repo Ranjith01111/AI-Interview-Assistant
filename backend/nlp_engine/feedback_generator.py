@@ -525,7 +525,12 @@ def generate_final_summary(results: list = None, scores: list = None, candidate_
             "strengths": top_strengths,
             "improvements": top_gaps,
             "score_breakdown": [
-                {"question": d.get("question", f"Q{i+1}"), "score": d.get("score", 0)}
+                {
+                    "question": d.get("question", f"Q{i+1}"), 
+                    "score": d.get("score", 0),
+                    "answer": d.get("answer", ""),
+                    "feedback": d.get("acknowledgment", "") or ", ".join(d.get("gaps", d.get("improvements", [])))
+                }
                 for i, d in enumerate(data)
             ],
         }

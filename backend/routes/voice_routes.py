@@ -4,10 +4,10 @@ Voice WebSocket Router — Handles real-time voice interview streaming.
 
 import json
 import re
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from sqlalchemy.ext.asyncio import AsyncSession  # noqa: F401 - used in type hints
 
-from backend.db.session import get_db
+from backend.db.session import AsyncSessionLocal
 from backend.core.logging import get_logger
 from backend.services.voice_service import transcribe_audio, text_to_speech
 from backend.services.interview_service import start_interview, process_interview_message
@@ -22,7 +22,6 @@ router = APIRouter(prefix="/interview", tags=["Voice Interview"])
 async def websocket_voice_stream(
     websocket: WebSocket,
     session_id: str,
-    db: AsyncSession = Depends(get_db),
 ):
     """
     WebSocket endpoint for real-time voice streaming interview.
@@ -40,10 +39,10 @@ async def websocket_voice_stream(
         if agent is None:
             # Interview hasn't started yet, so trigger start
             logger.info("starting_interview_via_voice", session_id=session_id)
-            chat_response = await start_interview(session_id, db)
-            greeting_text = chat_response.message
-            # Commit the session start changes
-            await db.commit()
+            async with AsyncSessionLocal() as db:
+                chat_response = await start_interview(session_id, db)
+                greeting_text = chat_response.message
+                await db.commit()
         else:
             # Interview already started, retrieve the active question
             logger.info("resuming_interview_via_voice", session_id=session_id)
@@ -93,10 +92,10 @@ async def websocket_voice_stream(
                     text_answer = payload.get("text")
                     if text_answer:
                         logger.info("candidate_submitted_local_text", session_id=session_id, length=len(text_answer))
-                        await process_candidate_text_answer(websocket, text_answer, session_id, db)
+                        await process_candidate_text_answer(websocket, text_answer, session_id)
                     else:
                         logger.info("candidate_stopped_recording", session_id=session_id, size=len(audio_buffer))
-                        await process_candidate_voice(websocket, audio_buffer, session_id, db)
+                        await process_candidate_voice(websocket, audio_buffer, session_id)
                     # Clear buffer after processing
                     audio_buffer.clear()
                 elif msg_type == "ping":
@@ -118,8 +117,8 @@ async def websocket_voice_stream(
 
 def clean_markdown(text: str) -> str:
     """Helper to clean markdown syntax for text-to-speech rendering."""
-    # Remove bold markers
-    text = re.sub(r"\*\*.*?\*\*", "", text)
+    # Keep bold text content, just remove the ** markers
+    text = re.sub(r"\*\*(.*?)\*\*", r"\1", text)
     # Remove symbols and line breaks
     text = text.replace("❓", "").replace("💡", "").replace("👋", "").replace("🎉", "")
     text = text.replace("---", "").strip()
@@ -130,7 +129,6 @@ async def process_candidate_voice(
     websocket: WebSocket,
     audio_bytes: bytes,
     session_id: str,
-    db: AsyncSession,
 ):
     """Transcribe audio, pass to agent, and play back next question."""
     if not audio_bytes or len(audio_bytes) < 100:
@@ -158,9 +156,10 @@ async def process_candidate_voice(
     await websocket.send_json({"type": "transcript", "text": transcript})
 
     try:
-        # Feed transcript into interview system
-        chat_response = await process_interview_message(session_id, transcript, db)
-        await db.commit()
+        # Feed transcript into interview system (per-operation DB session)
+        async with AsyncSessionLocal() as db:
+            chat_response = await process_interview_message(session_id, transcript, db)
+            await db.commit()
     except Exception as e:
         logger.error("agent_processing_failed", error=str(e))
         await websocket.send_json({
@@ -202,16 +201,16 @@ async def process_candidate_text_answer(
     websocket: WebSocket,
     transcript: str,
     session_id: str,
-    db: AsyncSession,
 ):
     """Process transcribed text directly without running server-side STT."""
     # Send transcript back for frontend display
     await websocket.send_json({"type": "transcript", "text": transcript})
 
     try:
-        # Feed transcript into interview system
-        chat_response = await process_interview_message(session_id, transcript, db)
-        await db.commit()
+        # Feed transcript into interview system (per-operation DB session)
+        async with AsyncSessionLocal() as db:
+            chat_response = await process_interview_message(session_id, transcript, db)
+            await db.commit()
     except Exception as e:
         logger.error("agent_processing_failed", error=str(e))
         await websocket.send_json({

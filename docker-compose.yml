@@ -1,0 +1,48 @@
+version: "3.9"
+
+# ============================================================
+# AI Interview Assistant — Docker Compose
+# Services: PostgreSQL (port 5433) + Redis
+# Run: docker compose up -d postgres redis
+# ============================================================
+
+services:
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: interview-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: interview_assistant
+    ports:
+      - "5433:5432"   # host 5433 → container 5432
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d interview_assistant"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: interview-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  pgdata:
+  redisdata:

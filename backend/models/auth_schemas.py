@@ -41,7 +41,7 @@ class RegisterRequest(BaseModel):
     )
     role: str = Field(
         default="candidate",
-        description="User role: admin, interviewer, or candidate",
+        description="User role: admin, recruiter, interviewer, or candidate",
         examples=["candidate"],
     )
 
@@ -70,7 +70,7 @@ class RegisterRequest(BaseModel):
     @classmethod
     def validate_role(cls, v: str) -> str:
         """Ensure role is one of the allowed values."""
-        allowed = {"admin", "interviewer", "candidate"}
+        allowed = {"admin", "recruiter", "interviewer", "candidate"}
         if v.lower() not in allowed:
             raise ValueError(f"Role must be one of: {', '.join(sorted(allowed))}")
         return v.lower()

@@ -25,7 +25,7 @@ export function renderNavbar(container) {
   `;
 
   nav.querySelector('#logout-btn').onclick = () => {
-    localStorage.clear();
+    ['access_token', 'refresh_token', 'user', 'interview_session_state'].forEach(k => localStorage.removeItem(k));
     navigate('/login');
   };
 

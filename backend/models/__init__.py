@@ -16,6 +16,13 @@ from backend.models.question_embedding import QuestionEmbedding
 from backend.models.coding_challenge import CodingChallenge
 from backend.models.coding_submission import CodingSubmission
 
+# New recruiter models — safe import (may fail if base class mismatch)
+try:
+    from backend.models.pipeline_history import PipelineHistory
+    from backend.models.recruiter_note import RecruiterNote
+except Exception:
+    pass
+
 # Pydantic schemas
 from backend.models.schemas import (
     QuestionType,

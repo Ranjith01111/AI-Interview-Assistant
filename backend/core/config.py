@@ -40,10 +40,18 @@ class Settings(BaseSettings):
     # ── Local NLP Mode (no external API needed) ────────────────────
     USE_LOCAL_NLP: bool = True
 
-    # ── Backend Server ───────────────────────────────────────────────
+    # ── Agentic AI (Ollama Local LLM) ─────────────────────────────
+    USE_AGENTIC_AI: bool = True  # Enable LLM-based evaluation via local Ollama
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    OLLAMA_EVAL_MODEL: str = "deepseek-r1"  # Chain-of-thought evaluation
+    OLLAMA_CHAT_MODEL: str = "llama3"  # Conversational interview agent
+    OLLAMA_EMBED_MODEL: str = "nomic-embed-text"  # Semantic similarity
+    OLLAMA_TIMEOUT: int = 60  # Seconds before fallback to rule-based
+
+    # ── Backend Server ────────────────────────────────────────────
     BACKEND_HOST: str = "0.0.0.0"
     BACKEND_PORT: int = 8000
-    DEBUG: bool = True
+    DEBUG: bool = False
 
     # ── PostgreSQL (async) ───────────────────────────────────────────
     # Source default uses a placeholder username/password so that the app
@@ -66,7 +74,7 @@ class Settings(BaseSettings):
     # ── JWT Authentication ───────────────────────────────────────────
     JWT_SECRET_KEY: str = "REPLACE_ME_WITH_128_HEX_CHARS"
     JWT_ALGORITHM: str = "HS256"
-    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours for dev
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30  # 30 minutes (use refresh tokens for renewal)
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
     # ── Rate Limiting ────────────────────────────────────────────────
@@ -83,7 +91,7 @@ class Settings(BaseSettings):
     # ── Interview Agent ─────────────────────────────────────────────
     AGENT_MODEL: str = "openai/gpt-4o"
     AGENT_TEMPERATURE: float = 0.4
-    AGENT_MAX_FOLLOW_UPS: int = 0          # 0 = disabled, no follow-up questions
+    AGENT_MAX_FOLLOW_UPS: int = 1          # 1 = allow 1 intelligent follow-up per answer (agentic mode)
     AGENT_FOLLOW_UP_SCORE_THRESHOLD: int = 0  # 0 = never trigger follow-up on low score
     AGENT_MIN_ANSWER_LENGTH: int = 1       # 1 = accept any non-empty answer
     AGENT_MEMORY_WINDOW: int = 20

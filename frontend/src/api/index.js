@@ -35,6 +35,9 @@ export const interview = {
     apiJSON('/interview/chat', { method:'POST', body: JSON.stringify({ session_id: sessionId, message }) }),
 
   getSummary: (sessionId) => apiJSON(`/interview/summary/${sessionId}`),
+
+  saveVoiceSession: (results) =>
+    apiJSON('/interview/voice-session', { method:'POST', body: JSON.stringify(results) }),
 };
 
 export const coding = {

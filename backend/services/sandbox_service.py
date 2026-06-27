@@ -1,6 +1,8 @@
 """
 Sandbox Service — Execution Engine for Coding Assessments
 
+SECURITY HARDENED — 2026-06-27
+
 Compiles and runs code inside containerized Docker Sandboxes.
 Enforces time and memory limits.
 Falls back gracefully to local subprocess execution when Docker daemon is not active.
@@ -9,6 +11,7 @@ Runs SQL queries inside isolated SQLite memory databases.
 
 import asyncio
 import os
+import re
 import sys
 import shutil
 import subprocess
@@ -22,6 +25,90 @@ from pathlib import Path
 from backend.core.logging import get_logger
 
 logger = get_logger("backend.services.sandbox_service")
+
+
+# ── Code Sanitization ──────────────────────────────────────────────────────
+# Block dangerous patterns that could escape the sandbox or harm the host.
+
+BLOCKED_PYTHON_PATTERNS = [
+    r"\bos\.system\b",
+    r"\bos\.popen\b",
+    r"\bos\.exec\w*\b",
+    r"\bos\.spawn\w*\b",
+    r"\bos\.remove\b",
+    r"\bos\.unlink\b",
+    r"\bos\.rmdir\b",
+    r"\bshutil\.rmtree\b",
+    r"\bsubprocess\b",
+    r"\b__import__\b",
+    r"\beval\s*\(",
+    r"\bexec\s*\(",
+    r"\bcompile\s*\(",
+    r"\bopen\s*\(.*(w|a|x)",  # block write/append/create modes
+    r"\bsocket\b",
+    r"\brequests\b",
+    r"\burllib\b",
+    r"\bhttp\.client\b",
+    r"\bctypes\b",
+    r"\bsignal\b",
+    r"\bsys\.exit\b",
+]
+
+BLOCKED_JS_PATTERNS = [
+    r"\bchild_process\b",
+    r"\bexecSync\b",
+    r"\bexecFile\b",
+    r"\bspawnSync\b",
+    r"\bspawn\b",
+    r"\brequire\s*\(\s*['\"]fs['\"]\)(?!\s*\.\s*readFileSync)",
+    r"\brequire\s*\(\s*['\"]net['\"]",
+    r"\brequire\s*\(\s*['\"]http['\"]",
+    r"\brequire\s*\(\s*['\"]https['\"]",
+    r"\brequire\s*\(\s*['\"]os['\"]",
+    r"\bprocess\.exit\b",
+    r"\bprocess\.env\b",
+    r"\beval\s*\(",
+    r"\bFunction\s*\(",
+]
+
+BLOCKED_CPP_PATTERNS = [
+    r"\bsystem\s*\(",
+    r"\bpopen\s*\(",
+    r"\bexecl\b",
+    r"\bexecv\b",
+    r"\bfork\s*\(",
+    r"\b#include\s*<(sys/socket|netinet|arpa|netdb)",
+]
+
+BLOCKED_JAVA_PATTERNS = [
+    r"\bRuntime\.getRuntime\(\)\.exec\b",
+    r"\bProcessBuilder\b",
+    r"\bSocket\b",
+    r"\bServerSocket\b",
+    r"\bURLConnection\b",
+    r"\bSystem\.exit\b",
+    r"\bjava\.net\b",
+    r"\bjava\.lang\.reflect\b",
+]
+
+
+def _sanitize_code(language: str, code: str) -> str | None:
+    """
+    Returns an error message if blocked patterns are found, else None.
+    This is a defense-in-depth measure — not a replacement for sandboxing.
+    """
+    patterns_map = {
+        "python": BLOCKED_PYTHON_PATTERNS,
+        "javascript": BLOCKED_JS_PATTERNS,
+        "c": BLOCKED_CPP_PATTERNS,
+        "cpp": BLOCKED_CPP_PATTERNS,
+        "java": BLOCKED_JAVA_PATTERNS,
+    }
+    patterns = patterns_map.get(language, [])
+    for pattern in patterns:
+        if re.search(pattern, code, re.IGNORECASE):
+            return f"Blocked: Code contains prohibited pattern matching '{pattern}'. System calls, network access, and file writes are not allowed."
+    return None
 
 
 class SandboxService:
@@ -95,9 +182,36 @@ class SandboxService:
         if lang == "sql":
             return await self._execute_sql(code, test_cases)
 
-        # Always use local subprocess (no Docker dependency) — wrapped in safety net
+        # ── Security: Sanitize code before execution ──────────────────
+        violation = _sanitize_code(lang, code)
+        if violation:
+            logger.warning("code_blocked_by_sanitizer", language=lang, reason=violation)
+            return {
+                "status": "Security Violation",
+                "score": 0,
+                "results": [],
+                "error": violation,
+            }
+
+        # SECURITY: Require Docker for code execution.
+        docker_ok = await self.check_docker_available()
+        if not docker_ok:
+            # Fallback: use local subprocess for interpreted languages (Python, JS)
+            if lang in ("python", "javascript"):
+                logger.warning("sandbox_using_local_fallback", language=lang)
+                return await self._execute_local(lang, code, test_cases, time_limit)
+            else:
+                logger.warning("sandbox_docker_unavailable", language=lang)
+                return {
+                    "status": "Sandbox Unavailable",
+                    "score": 0,
+                    "results": [],
+                    "error": f"Code execution for {lang} requires Docker. Python and JavaScript work without Docker.",
+                    "sandbox_type": "None (Docker required for compiled languages)"
+                }
+
         try:
-            return await self._execute_local(lang, code, test_cases, time_limit, memory_limit, warning="Local Subprocess")
+            return await self._execute_docker(lang, code, test_cases, time_limit, memory_limit)
         except Exception as e:
             logger.error("execute_failed_top_level", error=str(e), language=lang)
             import traceback
@@ -223,6 +337,7 @@ class SandboxService:
         config = {
             "python": {"file": "solution.py", "image": "python:3.10-slim", "run_cmd": "python solution.py"},
             "javascript": {"file": "solution.js", "image": "node:18-slim", "run_cmd": "node solution.js"},
+            "c": {"file": "main.c", "image": "gcc:latest", "run_cmd": "./main"},
             "cpp": {"file": "main.cpp", "image": "gcc:latest", "run_cmd": "./main"},
             "java": {"file": "Solution.java", "image": "openjdk:17-slim", "run_cmd": "java Solution"}
         }
@@ -241,10 +356,12 @@ class SandboxService:
             src_file.write_text(code, encoding="utf-8")
 
             # ── 1. Compilation Phase (C++ and Java) ────────────────────────
-            is_compiled = lang in ["cpp", "java"]
+            is_compiled = lang in ["c", "cpp", "java"]
             if is_compiled:
                 comp_container_name = f"{sandbox_id}_compile"
-                if lang == "cpp":
+                if lang == "c":
+                    comp_cmd = ["docker", "create", "--name", comp_container_name, "-w", "/app", cfg["image"], "gcc", "-O2", cfg["file"], "-o", "main", "-lm"]
+                elif lang == "cpp":
                     comp_cmd = ["docker", "create", "--name", comp_container_name, "-w", "/app", cfg["image"], "g++", "-O3", cfg["file"], "-o", "main"]
                 else:  # java
                     comp_cmd = ["docker", "create", "--name", comp_container_name, "-w", "/app", cfg["image"], "javac", cfg["file"]]
@@ -468,14 +585,16 @@ class SandboxService:
             def _run_sync(cmd, cwd=None, input_bytes=None, timeout=None):
                 """Blocking subprocess wrapper executed in a thread."""
                 try:
-                    return subprocess.run(
+                    # SECURITY FIX: Never use shell=True with untrusted input
+                    proc_result = subprocess.run(
                         cmd,
                         input=input_bytes,
                         capture_output=True,
                         cwd=cwd,
                         timeout=timeout or 10,
-                        shell=(os.name == "nt"),  # shell=True on Windows for PATH resolution
+                        shell=False,  # SECURITY: shell=False prevents command injection
                     )
+                    return proc_result
                 except subprocess.TimeoutExpired:
                     # Return a fake result for timeout
                     class _FakeResult:

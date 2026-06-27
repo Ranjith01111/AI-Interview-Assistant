@@ -28,6 +28,10 @@ frontend/node_modules/
 frontend/dist/
 .vite/
 
+# ── Fonts (downloaded via scripts/download_fonts.ps1) ──
+frontend/src/fonts/*.woff2
+frontend/src/fonts/*.woff
+
 # ── Docker ───────────────────────────────────
 certbot/
 data/

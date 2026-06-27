@@ -7,7 +7,7 @@ and session integrity reports for recruiters.
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import List, Dict, Any, Optional
 import uuid
 
@@ -19,18 +19,30 @@ from backend.models.user import User, UserRole
 from backend.db.session import get_db
 from backend.services.proctor_service import proctor_service
 
-# Proctor router has NO auth guard — the embedded iframe cannot carry JWT tokens.
-# All proctoring data is scoped by session_id, which provides sufficient isolation.
+# Proctor router protected by JWT auth (called from same SPA, not an iframe)
 router = APIRouter(
     prefix="/proctor",
     tags=["Proctoring"],
+    dependencies=[Depends(get_current_active_user)],
 )
 
 
 
 class FrameAnalysisRequest(BaseModel):
     session_id: str
-    image_data: str  # Base64-encoded JPEG image string
+    image_data: str  # Base64-encoded JPEG image string (max ~500KB after encoding)
+
+    @field_validator("image_data")
+    @classmethod
+    def validate_image_size(cls, v: str) -> str:
+        # Base64 encoded 320x240 JPEG at 60% quality ≈ 15-30KB
+        # Allow up to 500KB (generous for higher-res frames)
+        max_size = 500 * 1024  # 500KB in characters
+        if len(v) > max_size:
+            raise ValueError(
+                f"Image data too large ({len(v) // 1024}KB). Maximum is 500KB."
+            )
+        return v
 
 
 class ViolationDetail(BaseModel):

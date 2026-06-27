@@ -19,7 +19,7 @@ class CodingChallenge(UUIDMixin, TimestampMixin, Base):
     """
     __tablename__ = "coding_challenges"
 
-    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     difficulty: Mapped[str] = mapped_column(String(50), default="Medium", nullable=False)
     

@@ -1,6 +1,8 @@
 """
 Authentication Service
 
+SECURITY HARDENED — 2026-06-27
+
 Contains business logic for:
   • Hashing and verifying passwords (bcrypt)
   • Generating JWT access and refresh tokens (PyJWT)
@@ -12,6 +14,7 @@ Contains business logic for:
 
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
+import re
 import uuid
 import jwt
 import bcrypt
@@ -27,6 +30,51 @@ from backend.services.audit_service import log_audit_event
 from backend.db.redis import redis_set_json, redis_get_json, redis_delete
 
 logger = get_logger("backend.services.auth")
+
+
+# ── Account Lockout Policy ────────────────────────────────────────────────────
+# Lock account after N consecutive failed attempts. Lockout expires after M minutes.
+
+MAX_FAILED_ATTEMPTS = 5
+LOCKOUT_DURATION_MINUTES = 15
+_LOCKOUT_KEY_PREFIX = "login_attempts:"
+
+
+# ── Password Policy ──────────────────────────────────────────────────────
+# Enforces minimum security standards for user passwords.
+
+MIN_PASSWORD_LENGTH = 8
+MAX_PASSWORD_LENGTH = 128
+
+
+def validate_password_strength(password: str) -> None:
+    """
+    Validates password meets minimum security requirements.
+    Raises HTTPException if password is too weak.
+    
+    Policy:
+      - Minimum 8 characters
+      - Maximum 128 characters (prevent bcrypt DoS)
+      - At least 1 uppercase letter
+      - At least 1 lowercase letter
+      - At least 1 digit
+    """
+    errors = []
+    if len(password) < MIN_PASSWORD_LENGTH:
+        errors.append(f"at least {MIN_PASSWORD_LENGTH} characters")
+    if len(password) > MAX_PASSWORD_LENGTH:
+        errors.append(f"no more than {MAX_PASSWORD_LENGTH} characters")
+    if not re.search(r"[A-Z]", password):
+        errors.append("at least 1 uppercase letter")
+    if not re.search(r"[a-z]", password):
+        errors.append("at least 1 lowercase letter")
+    if not re.search(r"\d", password):
+        errors.append("at least 1 digit")
+    if errors:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Password too weak. Required: {', '.join(errors)}.",
+        )
 
 
 # ── Password Hashing Helpers ─────────────────────────────────────────
@@ -92,6 +140,9 @@ async def register_user(
     Validates email uniqueness and hashes the password.
     Logs an audit event for registration.
     """
+    # SECURITY: Enforce password policy
+    validate_password_strength(data.password)
+
     # Check if user already exists
     query = select(User).where(User.email == data.email)
     result = await db.execute(query)
@@ -122,6 +173,7 @@ async def register_user(
 
     db.add(new_user)
     await db.flush()  # Populates new_user.id
+    await db.refresh(new_user)  # Populate server defaults (created_at, etc.)
 
     # Log successful registration
     await log_audit_event(
@@ -146,7 +198,21 @@ async def authenticate_user(
     Authenticate a user by email and password.
     Generates access and refresh tokens, stores refresh token in Redis,
     updates last_login_at timestamp, and logs audit events.
+
+    Includes account lockout: after 5 failed attempts, the account is
+    locked for 15 minutes regardless of correct credentials.
     """
+    # ── Check lockout status ──────────────────────────────────────────
+    lockout_key = f"{_LOCKOUT_KEY_PREFIX}{credentials.email}"
+    lockout_data = await redis_get_json(lockout_key)
+    if lockout_data and lockout_data.get("count", 0) >= MAX_FAILED_ATTEMPTS:
+        logger.warning("account_locked_out", email=credentials.email, attempts=lockout_data["count"])
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Account temporarily locked due to {MAX_FAILED_ATTEMPTS} failed login attempts. "
+                   f"Please try again in {LOCKOUT_DURATION_MINUTES} minutes.",
+        )
+
     query = select(User).where(User.email == credentials.email)
     result = await db.execute(query)
     user = result.scalars().first()
@@ -166,6 +232,9 @@ async def authenticate_user(
             details={"email": credentials.email, "reason": "user_not_found_or_inactive"},
             request=request,
         )
+        # Increment failed attempts
+        attempts = (lockout_data.get("count", 0) if lockout_data else 0) + 1
+        await redis_set_json(lockout_key, {"count": attempts}, ttl=LOCKOUT_DURATION_MINUTES * 60)
         raise invalid_credentials_exception
 
     if not verify_password(credentials.password, user.password_hash):
@@ -177,9 +246,16 @@ async def authenticate_user(
             details={"email": credentials.email, "reason": "invalid_password"},
             request=request,
         )
+        # Increment failed attempts
+        attempts = (lockout_data.get("count", 0) if lockout_data else 0) + 1
+        await redis_set_json(lockout_key, {"count": attempts}, ttl=LOCKOUT_DURATION_MINUTES * 60)
+        remaining = MAX_FAILED_ATTEMPTS - attempts
+        if remaining > 0:
+            logger.info("login_failed_attempt", email=credentials.email, attempts=attempts, remaining=remaining)
         raise invalid_credentials_exception
 
-    # Successful authentication
+    # ── Successful authentication — reset lockout counter ─────────────
+    await redis_delete(lockout_key)
     access_token = create_access_token(user.id, user.role)
     refresh_token = create_refresh_token(user.id)
 

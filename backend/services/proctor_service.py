@@ -5,16 +5,25 @@ for integrity monitoring, and writes violations to the database.
 """
 
 import os
-import cv2
 import math
-import numpy as np
 import base64
 import urllib.request
 import structlog
 import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, List, Optional
-import mediapipe as mp
+
+try:
+    import cv2
+    import numpy as np
+    import mediapipe as mp
+    HAS_PROCTORING_DEPS = True
+except ImportError:
+    HAS_PROCTORING_DEPS = False
+    cv2 = None
+    np = None
+    mp = None
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, desc
 
@@ -382,8 +391,7 @@ class ProctorService:
                 except Exception as db_err:
                     logger.error("proctor_log_insertion_failed", error=str(db_err))
             
-            # Commit logs to PostgreSQL database session
-            await db.commit()
+            # Note: commit handled by get_db() dependency lifecycle
 
         return {
             "success": True,
@@ -414,7 +422,7 @@ class ProctorService:
                 details=details or {}
             )
             db.add(log_entry)
-            await db.commit()
+            await db.flush()  # flush to DB, commit handled by get_db() lifecycle
             logger.info("browser_proctor_event_logged", session_id=session_id, event_type=event_type)
             return {"success": True}
         except Exception as e:

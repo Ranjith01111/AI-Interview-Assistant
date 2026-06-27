@@ -1,29 +1,29 @@
 """
 Resume Router — Handles PDF upload and processing endpoints.
 """
+from backend.core.logging import get_logger
 
-from fastapi import APIRouter, Depends, File, UploadFile, HTTPException
+logger = get_logger("backend.routes.resume")
+
+from fastapi import APIRouter, Depends, File, UploadFile, HTTPException, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-
-try:
-    from openai import AuthenticationError, RateLimitError
-except ImportError:
-    AuthenticationError = Exception
-    RateLimitError = Exception
 
 from backend.db.session import get_db
 from backend.models.schemas import ResumeUploadResponse
 from backend.services.resume_service import process_resume
 from backend.core.security import get_current_active_user
 from backend.models.user import User
+from backend.core.rate_limiter import limiter
 
 # Create router with /resume prefix
 router = APIRouter(prefix="/resume", tags=["Resume"])
 
 
 @router.post("/upload", response_model=ResumeUploadResponse)
+@limiter.limit("5/minute")
 async def upload_resume(
+    request: Request,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -81,26 +81,9 @@ async def upload_resume(
 
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    except RateLimitError as e:
-        raise HTTPException(
-            status_code=402,
-            detail=(
-                "OpenAI quota exceeded or rate limit hit. "
-                "Please check your API key billing at https://platform.openai.com/account/billing "
-                f"(Details: {str(e)})"
-            )
-        )
-    except AuthenticationError as e:
-        raise HTTPException(
-            status_code=401,
-            detail=(
-                "Invalid OpenAI API key. "
-                "Please update OPENROUTER_API_KEY in your .env file. "
-                f"(Details: {str(e)})"
-            )
-        )
     except Exception as e:
+        logger.error("resume_processing_failed", error=str(e), error_type=type(e).__name__)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to process resume: {type(e).__name__}: {str(e)}"
+            detail="Failed to process resume. Please ensure your PDF is text-based and try again."
         )
