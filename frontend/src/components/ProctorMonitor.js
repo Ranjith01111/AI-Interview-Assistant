@@ -41,6 +41,9 @@ export class ProctorMonitor {
 
       // Enter fullscreen
       await this._enterFullscreen();
+    } else {
+      // Track existing fullscreen state if we skipped the prompt
+      this._isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement);
     }
 
     // Create proctor widget

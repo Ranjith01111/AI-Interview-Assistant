@@ -1,18 +1,12 @@
-﻿# ============================================================
-# AI Interview Assistant — Startup Script
-# Run from the project root: .\start.ps1
-# ============================================================
-
 $PROJECT_ROOT = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $PROJECT_ROOT
 
 Write-Host ""
 Write-Host "======================================================" -ForegroundColor Cyan
-Write-Host "   AI Interview Assistant — Startup" -ForegroundColor Cyan
+Write-Host "   AI Interview Assistant - Startup" -ForegroundColor Cyan
 Write-Host "======================================================" -ForegroundColor Cyan
 Write-Host ""
 
-# ── Step 1: Start Docker Desktop if not running ────────────
 Write-Host "[1/4] Checking Docker..." -ForegroundColor Yellow
 $dockerRunning = $false
 try {
@@ -42,7 +36,7 @@ if (-not $dockerRunning) {
                     break
                 }
             } catch {}
-            Write-Host "      Still waiting... ($elapsed/$timeout s)" -ForegroundColor DarkGray
+            Write-Host "      Still waiting..." -ForegroundColor DarkGray
         }
     } else {
         Write-Host "      [WARNING] Docker Desktop not found at expected path." -ForegroundColor Red
@@ -56,7 +50,6 @@ if (-not $dockerRunning) {
     exit 1
 }
 
-# ── Step 2: Start PostgreSQL + Redis via docker-compose ────
 Write-Host ""
 Write-Host "[2/4] Starting PostgreSQL + Redis containers..." -ForegroundColor Yellow
 docker compose up -d postgres redis
@@ -95,20 +88,16 @@ for ($i = 0; $i -lt 10; $i++) {
 }
 if (-not $redisReady) { Write-Host "      [WARNING] Redis may not be fully ready yet." -ForegroundColor Yellow }
 
-# ── Step 3: Start FastAPI Backend ──────────────────────────
 Write-Host ""
 Write-Host "[3/4] Starting FastAPI Backend (http://localhost:8000)..." -ForegroundColor Yellow
-Start-Process powershell -ArgumentList "-NoExit", "-Command", `
-    "Set-Location '$PROJECT_ROOT'; Write-Host 'Starting Backend...' -ForegroundColor Cyan; .\venv\Scripts\python.exe run_backend.py" `
-    -WindowStyle Normal
+$backendArgs = "-NoExit", "-Command", "Set-Location '$PROJECT_ROOT'; Write-Host 'Starting Backend...' -ForegroundColor Cyan; python run_backend.py"
+Start-Process powershell -ArgumentList $backendArgs -WindowStyle Normal
 
 Start-Sleep -Seconds 5
 
-# ── Step 4: Start Vite Frontend ────────────────────────────
 Write-Host "[4/4] Starting Vite Frontend (http://localhost:5173)..." -ForegroundColor Yellow
-Start-Process powershell -ArgumentList "-NoExit", "-Command", `
-    "Set-Location '$PROJECT_ROOT\frontend'; Write-Host 'Starting Frontend...' -ForegroundColor Cyan; npm run dev" `
-    -WindowStyle Normal
+$frontendArgs = "-NoExit", "-Command", "Set-Location '$PROJECT_ROOT\frontend'; Write-Host 'Starting Frontend...' -ForegroundColor Cyan; npm run dev"
+Start-Process powershell -ArgumentList $frontendArgs -WindowStyle Normal
 
 Write-Host ""
 Write-Host "======================================================" -ForegroundColor Green

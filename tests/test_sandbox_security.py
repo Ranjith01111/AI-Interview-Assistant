@@ -231,6 +231,24 @@ class TestSandboxExecution:
             )
             assert result["status"] == "Security Violation", f"Failed to block: {code[:40]}"
 
+    @pytest.mark.asyncio
+    async def test_sandbox_fallback_local_execution(self, sandbox):
+        """Test that local fallback execution works when Docker is unavailable and passes memory_limit correctly."""
+        # Force docker to be unavailable
+        sandbox._docker_available = False
+        
+        result = await sandbox.execute(
+            language="python",
+            code="print('fallback success')",
+            test_cases=[{"input": "", "expected_output": "fallback success"}],
+            time_limit=2.0,
+            memory_limit=128
+        )
+        
+        assert result["status"] == "Passed", f"Execution failed with error: {result.get('error')}"
+        assert result["score"] == 100
+        assert len(result["results"]) == 1
+
 
 # ══════════════════════════════════════════════════════════════════════════
 # SHELL=FALSE VERIFICATION

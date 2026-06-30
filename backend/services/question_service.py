@@ -3,10 +3,12 @@ Question Generation Service — STANDALONE VERSION
 
 Uses local NLP question bank + generator instead of LLM API calls.
 No OpenRouter, no LangChain, no external API.
+
+Now supports: focus_categories, preset_id, difficulty_override, num_questions.
 """
 
 import uuid as uuid_mod
-from typing import List
+from typing import List, Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +19,7 @@ from backend.models.question import Question as QuestionORM
 from backend.models.schemas import InterviewQuestion, QuestionType, QuestionCategory, DifficultyLevel
 from backend.services import session_service
 from backend.nlp_engine.question_generator import generate_questions_for_candidate
+from backend.nlp_engine.interview_presets import get_preset, get_categories_from_preset
 
 logger = get_logger("backend.services.question_service")
 
@@ -24,19 +27,28 @@ logger = get_logger("backend.services.question_service")
 async def generate_questions(
     session_id: str,
     db: AsyncSession,
+    focus_categories: Optional[List[str]] = None,
+    num_questions: int = 10,
+    difficulty_override: Optional[str] = None,
+    preset_id: Optional[str] = None,
 ) -> List[InterviewQuestion]:
     """
     Generate interview questions using the local NLP engine.
 
     Pipeline:
       1. Retrieve session metadata from Redis
-      2. Run local question generator (template-based)
-      3. Persist questions to PostgreSQL
-      4. Cache in Redis for the interview loop
+      2. Apply preset/focus config if provided
+      3. Run local question generator (template-based)
+      4. Persist questions to PostgreSQL
+      5. Cache in Redis for the interview loop
 
     Args:
         session_id: The unique session ID (must have a processed resume)
         db: Async SQLAlchemy session
+        focus_categories: Optional list of categories to focus on
+        num_questions: Number of questions to generate
+        difficulty_override: Force a specific difficulty level
+        preset_id: Optional preset ID to apply
 
     Returns:
         List of InterviewQuestion objects
@@ -44,7 +56,7 @@ async def generate_questions(
     Raises:
         ValueError: If the session is not found
     """
-    logger.info("generating_questions", session_id=session_id)
+    logger.info("generating_questions", session_id=session_id, preset=preset_id)
 
     # ── Step 1: Retrieve session data from Redis ─────────────────
     session_meta = await session_service.get_session_meta(session_id)
@@ -60,12 +72,23 @@ async def generate_questions(
     if parsed_resume:
         experience_level = parsed_resume.get("experience_level", "mid")
 
-    # ── Step 2: Generate questions locally ────────────────────────
+    # ── Step 2: Apply preset configuration ───────────────────────
+    if preset_id:
+        preset = get_preset(preset_id)
+        if preset:
+            num_questions = preset.num_questions
+            difficulty_override = preset.difficulty
+            focus_categories = get_categories_from_preset(preset_id)
+            logger.info("using_preset", preset_id=preset_id, num_q=num_questions)
+
+    # ── Step 3: Generate questions locally ────────────────────────
     raw_questions = generate_questions_for_candidate(
         skills=skills,
         experience_years=experience,
         experience_level=experience_level,
-        num_questions=10,
+        num_questions=num_questions,
+        focus_categories=focus_categories or [],
+        difficulty_override=difficulty_override,
     )
 
     logger.info(
@@ -74,7 +97,7 @@ async def generate_questions(
         total=len(raw_questions),
     )
 
-    # ── Step 3: Convert to InterviewQuestion schema ──────────────
+    # ── Step 4: Convert to InterviewQuestion schema ──────────────
     questions: List[InterviewQuestion] = []
     for idx, q in enumerate(raw_questions, start=1):
         # Map category string to enum
@@ -106,7 +129,7 @@ async def generate_questions(
             project_reference=q.get("project_reference") or "",
         ))
 
-    # ── Step 4: Persist to PostgreSQL ────────────────────────────
+    # ── Step 5: Persist to PostgreSQL ────────────────────────────
     session_uuid = uuid_mod.UUID(session_id)
 
     for q in questions:
@@ -132,7 +155,7 @@ async def generate_questions(
 
     await db.flush()
 
-    # ── Step 5: Cache in Redis ───────────────────────────────────
+    # ── Step 6: Cache in Redis ───────────────────────────────────
     questions_cache = [
         {
             "id": idx + 1,

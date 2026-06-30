@@ -53,7 +53,7 @@ function withTimeout(promise, ms = 15000) {
   ]);
 }
 
-/* ── Error display helper ──────────────────────────────────────────────── */
+/* ── Error display helper ──────────────────────────────────────────── */
 function showError(app, err) {
   const isNetworkError = err.message.includes('timeout') || 
                          err.message.includes('reach server') ||
@@ -61,17 +61,17 @@ function showError(app, err) {
                          err.message.includes('Backend');
   
   app.innerHTML = `
-    <div style="display:flex;align-items:center;justify-content:center;min-height:100vh;flex-direction:column;gap:16px;padding:24px;text-align:center;">
-      <div style="font-size:4rem;">${isNetworkError ? '🔌' : '⚠️'}</div>
-      <h2 style="color:${isNetworkError ? 'var(--accent-gold)' : 'var(--accent-red)'};">
+    <div class="error-page">
+      <div class="error-page-icon">${isNetworkError ? '🔌' : '⚠️'}</div>
+      <h2 class="error-page-title ${isNetworkError ? 'error-network' : 'error-generic'}">
         ${isNetworkError ? 'Backend Not Reachable' : 'Something went wrong'}
       </h2>
-      <p style="color:var(--text-secondary);max-width:400px;">
+      <p class="error-page-body">
         ${isNetworkError 
-          ? 'Cannot connect to the backend server. Please ensure:<br>1. Run <code>python run_backend.py</code><br>2. PostgreSQL is running on port 5433<br>3. Check the terminal for errors'
+          ? 'Cannot connect to the backend server. Please ensure:<br>1. Run <code>python run_backend.py</code><br>2. PostgreSQL is running<br>3. Check the terminal for errors'
           : err.message}
       </p>
-      <div style="display:flex;gap:12px;margin-top:8px;">
+      <div class="error-page-actions">
         <button class="btn btn-primary" onclick="location.reload()">🔄 Retry</button>
         <button class="btn btn-secondary" onclick="location.hash='#/login'">← Login</button>
       </div>
@@ -151,17 +151,17 @@ async function handleRoute() {
 // ── Route listener ──
 window.addEventListener('hashchange', handleRoute);
 
-// ── Initialize ──
-window.addEventListener('DOMContentLoaded', () => {
-  // Dismiss loading screen (backup)
-  if (window.__stopLoader) window.__stopLoader();
-  const loadingEl = document.getElementById('loading-screen');
-  if (loadingEl) loadingEl.remove();
-  handleRoute();
-});
-
-// ── Immediate init if DOM already loaded ──
-if (document.readyState !== 'loading') {
+// ── Initialize on DOM ready ──
+if (document.readyState === 'loading') {
+  // DOM not yet ready — wait for it
+  window.addEventListener('DOMContentLoaded', () => {
+    if (window.__stopLoader) window.__stopLoader();
+    const loadingEl = document.getElementById('loading-screen');
+    if (loadingEl) loadingEl.remove();
+    handleRoute();
+  });
+} else {
+  // DOM already ready (module loaded after parse) — run immediately
   if (window.__stopLoader) window.__stopLoader();
   const loadingEl = document.getElementById('loading-screen');
   if (loadingEl) loadingEl.remove();

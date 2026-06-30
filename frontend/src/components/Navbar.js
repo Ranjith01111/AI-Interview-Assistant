@@ -2,14 +2,19 @@
 import { navigate } from '../main.js';
 
 export function renderNavbar(container) {
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
-  const initials = (user.name || 'U').split(' ').map(w => w[0]).join('').toUpperCase().slice(0,2);
-  const roleLabel = { admin:'Admin', recruiter:'Recruiter', interviewer:'Interviewer', candidate:'Candidate' }[user.role] || '';
+  const user      = JSON.parse(localStorage.getItem('user') || '{}');
+  const initials  = (user.name || 'U').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+  const roleLabel = { admin: 'Admin', recruiter: 'Recruiter', interviewer: 'Interviewer', candidate: 'Candidate' }[user.role] || '';
+
+  // Resolve home route by role — never lands on a 404
+  const homeRoute = (user.role === 'admin' || user.role === 'recruiter' || user.role === 'interviewer')
+    ? '#/recruiter'
+    : '#/dashboard';
 
   const nav = document.createElement('nav');
   nav.className = 'navbar';
   nav.innerHTML = `
-    <a class="navbar-brand" href="#/">
+    <a class="navbar-brand" href="${homeRoute}" id="navbar-logo">
       <span>🤖</span>
       <span>AI Interview</span>
     </a>
@@ -18,11 +23,22 @@ export function renderNavbar(container) {
       <div class="user-avatar">${initials}</div>
       <div>
         <div class="user-name">${user.name || 'User'}</div>
-        <div style="font-size:0.72rem;color:var(--text-muted)">${roleLabel}</div>
+        <div class="navbar-role">${roleLabel}</div>
       </div>
       <button class="logout-btn" id="logout-btn">Sign out</button>
     </div>
   `;
+
+  // Use navigate() so the SPA router handles it — no hard reload
+  nav.querySelector('#navbar-logo').addEventListener('click', (e) => {
+    e.preventDefault();
+    const role = JSON.parse(localStorage.getItem('user') || '{}').role;
+    if (role === 'admin' || role === 'recruiter' || role === 'interviewer') {
+      navigate('/recruiter');
+    } else {
+      navigate('/dashboard');
+    }
+  });
 
   nav.querySelector('#logout-btn').onclick = () => {
     ['access_token', 'refresh_token', 'user', 'interview_session_state'].forEach(k => localStorage.removeItem(k));

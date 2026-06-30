@@ -60,6 +60,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
     """
     Structured HTTP Request & Response logger.
     Captures method, URI, duration, and response status codes.
+    Includes Payload Sniffing to capture exact request details on failure.
     """
     async def dispatch(self, request: Request, call_next) -> Response:
         start_time = time.perf_counter()
@@ -93,6 +94,8 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                 path=request.url.path,
                 error=str(e),
                 duration_ms=round(duration * 1000, 2),
+                sniffed_payload="<payload sniffing disabled>",
+                sniffed_headers=dict(request.headers)
             )
             raise e
 

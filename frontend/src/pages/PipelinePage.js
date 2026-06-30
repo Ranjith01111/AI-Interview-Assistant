@@ -453,16 +453,13 @@ export async function renderPipelinePage(container) {
     renderNavbar(container);
 
     const layout = document.createElement('div');
-    layout.style.display = 'flex';
-    layout.style.height = 'calc(100vh - 60px)';
+    layout.className = 'dashboard-shell';
 
     layout.appendChild(renderSidebar('pipeline'));
 
     const main = document.createElement('div');
-    main.className = 'app-main';
+    main.className = 'dashboard-main';
     main.id = 'pipeline-container';
-    main.style.flex = '1';
-    main.style.overflowY = 'auto';
 
     layout.appendChild(main);
     container.appendChild(layout);

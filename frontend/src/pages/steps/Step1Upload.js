@@ -2,7 +2,7 @@
 import { interview } from '../../api/index.js';
 import { Toast } from '../../components/Toast.js';
 
-export async function renderStep1(container, state, onNext) {
+export async function renderStep1(container, state, onNext, onSkip = null) {
   container.innerHTML = `
     <div class="step-container slide-up">
       <div class="card">
@@ -42,9 +42,10 @@ export async function renderStep1(container, state, onNext) {
             <div class="skill-tags" id="skill-tags"></div>
           </div>
         </div>
-        <div style="padding:var(--spacing-md) var(--spacing-lg);border-top:1px solid var(--border);display:flex;justify-content:flex-end">
+        <div style="padding:var(--spacing-md) var(--spacing-lg);border-top:1px solid var(--border);display:flex;justify-content:${onSkip ? 'space-between' : 'flex-end'}">
+          ${onSkip ? '<button class="btn btn-ghost" id="skip-btn" style="color:var(--text-muted)">Skip without Resume →</button>' : ''}
           <button class="btn btn-primary" id="next-btn" disabled>
-            Generate Questions →
+            Next Step →
           </button>
         </div>
       </div>
@@ -111,4 +112,8 @@ export async function renderStep1(container, state, onNext) {
   }
 
   nextBtn.onclick = () => onNext();
+  if (onSkip) {
+    const skipBtn = container.querySelector('#skip-btn');
+    if (skipBtn) skipBtn.onclick = () => onSkip();
+  }
 }

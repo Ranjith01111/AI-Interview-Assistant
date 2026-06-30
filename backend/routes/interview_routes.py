@@ -1,8 +1,9 @@
 """
-Interview Routes — Handles question generation and mock interview chat.
+Interview Routes — Handles question generation, mock interview chat, and presets.
 """
 
 import uuid
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Path
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -22,6 +23,8 @@ from backend.services.interview_service import (
     process_interview_message,
     generate_final_summary_endpoint as generate_final_summary,
 )
+from backend.services import session_service
+from backend.nlp_engine.interview_presets import get_all_presets, get_preset
 from backend.core.security import get_current_active_user
 from backend.models.interview import InterviewSession
 from backend.models.user import User, UserRole
@@ -70,9 +73,20 @@ async def _verify_session_ownership(
         raise HTTPException(status_code=403, detail="You do not have access to this session.")
 
 
+# ── Interview Configuration Request Body ──────────────────────────────────
+class InterviewConfigRequest(BaseModel):
+    """Optional body for generate-questions with session config."""
+    preset_id: Optional[str] = None
+    focus_categories: List[str] = []
+    num_questions: int = 10
+    difficulty: Optional[str] = None
+
+
+# ── Routes ────────────────────────────────────────────────────────────────
 @router.post("/generate-questions/{session_id}", response_model=GenerateQuestionsResponse)
 async def generate_interview_questions(
     session_id: str,
+    config: Optional[InterviewConfigRequest] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -90,7 +104,14 @@ async def generate_interview_questions(
         GenerateQuestionsResponse with list of questions
     """
     try:
-        questions = await generate_questions(session_id, db)
+        questions = await generate_questions(
+            session_id,
+            db,
+            focus_categories=config.focus_categories if config else [],
+            num_questions=config.num_questions if config else 10,
+            difficulty_override=config.difficulty if config else None,
+            preset_id=config.preset_id if config else None,
+        )
 
         return GenerateQuestionsResponse(
             success=True,
@@ -107,6 +128,19 @@ async def generate_interview_questions(
             status_code=500,
             detail="Failed to generate questions. Please try again or contact support."
         )
+
+
+@router.get("/presets")
+async def get_interview_presets():
+    """
+    Get all available interview presets.
+    Public endpoint — no auth required (for display before login too).
+    """
+    return {
+        "success": True,
+        "presets": get_all_presets(),
+        "total": len(get_all_presets()),
+    }
 
 
 @router.post("/start/{session_id}", response_model=ChatResponse)
@@ -220,8 +254,6 @@ async def get_interview_summary(
 # ── Voice Interview Session Save ──────────────────────────────────────────────
 # Accepts results from the client-side voice interview and persists them.
 
-from typing import List, Optional
-
 class VoiceAnswerResult(BaseModel):
     question: str
     category: str
@@ -315,3 +347,41 @@ def _voice_recommendation(score: float) -> str:
         return "Maybe — needs improvement"
     else:
         return "No Hire"
+
+@router.post("/setup-custom")
+async def setup_custom_interview(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Creates a blank interview session for a Custom Configured Interview.
+    This bypasses the resume upload.
+    """
+    try:
+        session = InterviewSession(
+            user_id=current_user.id,
+            candidate_name=current_user.name or "Candidate",
+            resume_text="No resume provided. Custom configured interview.",
+            skills_detected=[],
+            experience_years="Not specified",
+            status="created"
+        )
+        db.add(session)
+        await db.commit()
+        await db.refresh(session)
+        
+        await session_service.save_session_meta(
+            session_id=str(session.id),
+            candidate_name=session.candidate_name,
+            skills=[],
+            experience="Not specified",
+            resume_text="No resume provided. Custom configured interview."
+        )
+
+        return {
+            "success": True,
+            "session_id": str(session.id)
+        }
+    except Exception as e:
+        logger.error("custom_setup_failed", error=str(e))
+        raise HTTPException(status_code=500, detail="Failed to create custom interview session.")

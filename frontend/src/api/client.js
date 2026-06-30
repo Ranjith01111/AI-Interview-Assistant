@@ -3,6 +3,7 @@
    
    GUARANTEES:
    • 10-second timeout on ALL requests (never hangs forever)
+   • 60-second timeout for LLM-heavy endpoints (report generation, AI eval)
    • Network errors show friendly messages (not raw exceptions)
    • Auto-refresh on 401 (token expiry)
    • Console logging for easy debugging
@@ -10,6 +11,7 @@
 
 export const BASE = '/api/v1';
 const REQUEST_TIMEOUT = 10000; // 10 seconds
+const LONG_REQUEST_TIMEOUT = 60000; // 60 seconds for LLM-heavy endpoints
 
 function getToken() { return localStorage.getItem('access_token') || ''; }
 function getRefresh() { return localStorage.getItem('refresh_token') || ''; }
@@ -115,7 +117,47 @@ export async function apiJSON(path, opts = {}) {
   return res.json();
 }
 
-/* ── Multipart upload (file upload) ────────────────────────────────────── */
+/* ── Long-timeout JSON request (for LLM-heavy endpoints like report generation) ── */
+export async function apiFetchLong(path, opts = {}) {
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
+    ...(opts.headers || {}),
+  };
+
+  let res;
+  try {
+    res = await fetchWithTimeout(`${BASE}${path}`, { ...opts, headers }, LONG_REQUEST_TIMEOUT);
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw new Error('Report generation timed out. Ollama may be slow — try again or check if Ollama is running.');
+    }
+    throw new Error('Cannot reach server. Please ensure the backend is running on port 8000.');
+  }
+
+  // Handle 401 with auto-refresh
+  if (res.status === 401 && !opts._retry) {
+    if (_refreshing) {
+      await new Promise(r => _queue.push(r));
+    } else {
+      _refreshing = true;
+      await doRefresh();
+      _refreshing = false;
+      _queue.forEach(r => r());
+      _queue = [];
+    }
+    return apiFetchLong(path, { ...opts, _retry: true });
+  }
+
+  if (!res.ok) {
+    let msg = `Request failed (HTTP ${res.status})`;
+    try { const d = await res.json(); msg = d.detail || d.message || msg; } catch {}
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
+/* ── Multipart upload (file upload) ────────────────────────────────────────────── */
 export async function apiUpload(path, formData) {
   const headers = getToken() ? { Authorization: `Bearer ${getToken()}` } : {};
 

@@ -1,5 +1,393 @@
 /* ── Interview Flow Styles ─────────────────────────────────── */
 
+/* ══════════════════════════════════════════════════════════════════
+   INTERVIEW FLOW SHELL — Stable, no-reflow full-height layout
+   ══════════════════════════════════════════════════════════════════ */
+
+/* The main shell that wraps stepper + step content.
+   Uses flex column so stepper is always fixed at top
+   and the host scrolls independently — no page-level reflow. */
+.interview-flow-shell {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - var(--navbar-height, 60px));
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+
+/* Stepper — fixed size, never reflowed */
+.interview-stepper {
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+}
+
+/* Step content host — takes remaining space and scrolls */
+.interview-step-host {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--spacing-lg);
+}
+
+/* ── Interview Chat Step Wrapper ── */
+.interview-step-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  height: 100%;
+  animation: slideUp 0.35s cubic-bezier(0.4,0,0.2,1);
+}
+
+/* ── Interview Control Bar (progress + timer + buttons) ── */
+.interview-control-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  padding: var(--spacing-sm) 0;
+  flex-shrink: 0;
+}
+.icb-left {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  flex: 1;
+}
+.icb-progress {
+  flex: 1;
+  max-width: 340px;
+}
+.icb-answered {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  min-width: 110px;
+}
+.icb-right {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-shrink: 0;
+}
+.interview-end-btn {
+  color: var(--accent-red);
+  border: 1px solid var(--accent-red);
+  background: transparent;
+  font-size: 0.8rem;
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+.interview-end-btn:hover { background: rgba(239,68,68,0.1); }
+
+/* ── Live dot indicator ── */
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-emerald);
+  animation: ping 1.5s infinite;
+  flex-shrink: 0;
+}
+
+/* ── Chat header layout ── */
+.chat-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.chat-header-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
+/* ── Per-question timer strip ── */
+.question-timer-strip {
+  justify-content: center;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+  flex-shrink: 0;
+}
+
+/* ── Interview chat panel — fills the remaining vertical space ── */
+.interview-chat-panel {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  height: auto;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   SESSION SETUP — Presets, Topic Focus, Timer Config
+   ══════════════════════════════════════════════════════════════════ */
+
+.setup-section {}
+.setup-section-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: var(--spacing-md);
+}
+.setup-section-header h4 {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+.setup-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* ── Preset Grid ── */
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--spacing-md);
+}
+.preset-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: var(--spacing-md);
+  background: var(--bg-card);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+.preset-card:hover {
+  border-color: rgba(245, 184, 0, 0.4);
+  background: rgba(245, 184, 0, 0.03);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+.preset-card.selected {
+  border-color: var(--accent-gold);
+  background: rgba(245, 184, 0, 0.08);
+  box-shadow: 0 0 0 3px rgba(245, 184, 0, 0.12), 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+.preset-card.selected::after {
+  content: '✓';
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  width: 22px;
+  height: 22px;
+  background: var(--accent-gold);
+  color: #0c0d0f;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+.preset-icon {
+  font-size: 1.8rem;
+}
+.preset-info { flex: 1; }
+.preset-name {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.preset-desc {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-top: 3px;
+  line-height: 1.4;
+}
+.preset-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+.preset-tag {
+  padding: 2px 8px;
+  background: rgba(245, 184, 0, 0.08);
+  border: 1px solid rgba(245, 184, 0, 0.15);
+  border-radius: var(--radius-full);
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--text-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.preset-meta {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.preset-meta-item {
+  padding: 3px 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: capitalize;
+}
+.preset-meta-item.difficulty-hard { color: var(--accent-red); border-color: rgba(239, 68, 68, 0.3); }
+.preset-meta-item.difficulty-medium { color: var(--accent-amber); border-color: rgba(245, 158, 11, 0.3); }
+.preset-meta-item.difficulty-easy { color: var(--accent-emerald); border-color: rgba(16, 185, 129, 0.3); }
+
+/* ── Category Chips ── */
+.category-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.category-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  background: var(--bg-card);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-full);
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: var(--font-sans);
+}
+.category-chip:hover {
+  border-color: rgba(245, 184, 0, 0.4);
+  background: rgba(245, 184, 0, 0.04);
+}
+.category-chip.active {
+  border-color: var(--accent-gold);
+  background: rgba(245, 184, 0, 0.12);
+  color: var(--text-accent);
+  font-weight: 600;
+}
+.category-chip.detected {
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.15);
+}
+.category-chip.detected.active {
+  box-shadow: 0 0 0 2px rgba(245, 184, 0, 0.15);
+}
+.chip-icon { font-size: 0.9rem; }
+.detected-hint {
+  margin-top: 8px;
+  font-size: 0.75rem;
+  color: var(--accent-emerald);
+}
+
+/* ── Timer Options ── */
+.timer-options {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.timer-option-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 18px;
+  background: var(--bg-card);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: var(--font-sans);
+}
+.timer-option-btn:hover {
+  border-color: rgba(245, 184, 0, 0.4);
+}
+.timer-option-btn.active {
+  border-color: var(--accent-gold);
+  background: rgba(245, 184, 0, 0.12);
+  color: var(--text-accent);
+  font-weight: 700;
+}
+.timer-opt-icon { font-size: 1rem; }
+
+/* ── Setup Summary Bar ── */
+.setup-summary {
+  display: flex;
+  gap: var(--spacing-lg);
+  padding: var(--spacing-md) var(--spacing-lg);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.summary-item { display: flex; flex-direction: column; gap: 2px; }
+.summary-label { font-size: 0.7rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.summary-value { font-size: 0.9rem; font-weight: 700; color: var(--accent-gold); }
+
+/* ── Per-Question Timer (Circular) ── */
+.question-timer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.qt-circle-wrap {
+  position: relative;
+  width: 52px;
+  height: 52px;
+}
+.qt-svg {
+  transform: rotate(-90deg);
+}
+.qt-track {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 3;
+}
+.qt-progress {
+  fill: none;
+  stroke: var(--accent-gold);
+  stroke-width: 3;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.9s linear;
+}
+.qt-time {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: var(--accent-gold);
+  font-family: 'JetBrains Mono', monospace;
+}
+.qt-label {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.question-timer.timer-warning .qt-progress { stroke: var(--accent-amber); }
+.question-timer.timer-warning .qt-time { color: var(--accent-amber); }
+.question-timer.timer-critical .qt-progress { stroke: var(--accent-red); animation: timerPulse 0.6s infinite; }
+.question-timer.timer-critical .qt-time { color: var(--accent-red); }
+.question-timer.timer-expired .qt-progress { stroke: var(--accent-red); opacity: 0.5; }
+.question-timer.timer-expired .qt-time { color: var(--accent-red); }
+
+/* ── Timer Badge (in chat header) ── */
+.timer-badge {
+  padding: 3px 8px;
+  background: rgba(245, 184, 0, 0.1);
+  border: 1px solid rgba(245, 184, 0, 0.2);
+  border-radius: var(--radius-full);
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--accent-gold);
+}
+
+/* ══════════════════════════════════════════════════════════════════ */
+
 /* Panel Timer */
 .panel-timer {
   display: flex;
@@ -73,16 +461,15 @@
 /* Questions */
 .questions-ready { text-align: center; padding: var(--spacing-2xl); animation: slideUp 0.4s ease; }
 .check-icon { width: 80px; height: 80px; border-radius: 50%; background: rgba(16,185,129,0.15); border: 2px solid var(--accent-emerald); display: flex; align-items: center; justify-content: center; font-size: 2rem; margin: 0 auto var(--spacing-lg); animation: glow 2s ease-in-out infinite; }
-.question-count-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(120px,1fr)); gap: var(--spacing-md); margin: var(--spacing-xl) 0; }
-.q-count-item { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--spacing-md); text-align: center; }
-.q-count-num { font-size: 2rem; font-weight: 800; color: var(--accent-gold); }
-.q-count-label { font-size: 0.75rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
+/* Clean total count badge — replaces old category grid */
+.q-total-badge { display: flex; flex-direction: column; align-items: center; gap: 4px; margin: var(--spacing-lg) 0; }
+.q-total-num { font-size: 3rem; font-weight: 800; color: var(--accent-emerald); line-height: 1; }
+.q-total-label { font-size: 0.8rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; }
 
 /* Interview Chat */
 .interview-layout { display: grid; grid-template-columns: 1fr 300px; gap: var(--spacing-lg); height: calc(100vh - 220px); min-height: 500px; }
 .chat-panel { display: flex; flex-direction: column; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; height: calc(100vh - 240px); min-height: 400px; max-height: 680px; }
-.chat-header { padding: var(--spacing-md) var(--spacing-lg); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; background: var(--bg-elevated); }
-.chat-header { flex-shrink: 0; }
+.chat-header { padding: var(--spacing-md) var(--spacing-lg); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; background: var(--bg-elevated); flex-shrink: 0; }
 .chat-mode-toggle { display: flex; gap: 3px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 3px; }
 .mode-btn { padding: 5px 14px; border: none; border-radius: var(--radius-sm); background: transparent; color: var(--text-muted); font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: var(--transition); font-family: var(--font-sans); }
 .mode-btn.active { background: var(--grad-primary); color: #0c0d0f; }
@@ -109,7 +496,7 @@
 .question-num { font-size: 2rem; font-weight: 800; color: var(--accent-gold); line-height: 1; }
 
 /* Coding */
-.coding-layout { display: grid; grid-template-columns: 320px 1fr; gap: var(--spacing-md); flex: 1; min-height: 0; overflow: hidden; }
+.coding-layout { display: grid; grid-template-columns: 45% 1fr; gap: var(--spacing-md); flex: 1; min-height: 0; overflow: hidden; }
 .challenge-panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
 .challenge-body { flex: 1; overflow-y: auto; padding: var(--spacing-md); min-height: 0; }
 .challenge-panel select option { background: var(--bg-card); color: var(--text-primary); padding: 8px; }

@@ -127,12 +127,8 @@ async def start_interview(
 
     intro_message = (
         f"👋 Hello **{candidate_name}**! Welcome to your mock interview.\n\n"
-        f"I'll ask you **{len(questions_cache)} questions** — {tech_count} technical "
-        f"and {hr_count} HR/behavioral questions.\n\n"
         f"💡 **Tip:** Answer as specifically as possible with concrete examples.\n\n"
         f"Ready? Let's begin!\n\n"
-        f"---\n"
-        f"**Question 1 of {len(questions_cache)}** [{first_question.get('type', 'TECHNICAL').upper()}]\n\n"
         f"❓ {first_question['question']}"
     )
 

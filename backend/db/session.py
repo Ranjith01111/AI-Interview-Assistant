@@ -16,6 +16,12 @@ from sqlalchemy.ext.asyncio import (
 
 from backend.core.config import settings
 from backend.db.base import Base
+from sqlalchemy import text
+from backend.core.resilience import ServiceUnavailableError
+import asyncio
+import logging
+
+logger = logging.getLogger("backend.db.session")
 
 # ── Engine ───────────────────────────────────────────────────────────
 async_engine = create_async_engine(
@@ -25,6 +31,7 @@ async_engine = create_async_engine(
     max_overflow=10,
     pool_pre_ping=True,             # verify connections before checkout
     pool_recycle=3600,              # recycle connections every hour
+    connect_args={"command_timeout": 15}, # Prevent queries from hanging forever
 )
 
 # ── Session factory ──────────────────────────────────────────────────
@@ -39,20 +46,29 @@ AsyncSessionLocal = async_sessionmaker(
 async def get_db() -> AsyncSession:
     """
     Yields an async SQLAlchemy session for a single request.
-
-    Usage in a route:
-        async def my_route(db: AsyncSession = Depends(get_db)):
-            ...
+    Includes a connection liveness check and retry logic for resilience.
     """
-    async with AsyncSessionLocal() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
-        finally:
-            await session.close()
+    session = AsyncSessionLocal()
+    try:
+        # Liveness check with retry
+        for attempt in range(3):
+            try:
+                await session.execute(text("SELECT 1"))
+                break
+            except Exception as e:
+                if attempt == 2:
+                    logger.error("db_liveness_check_failed", error=str(e))
+                    raise ServiceUnavailableError("Database connection unavailable", e)
+                logger.warning("db_liveness_check_retry", attempt=attempt + 1, error=str(e))
+                await asyncio.sleep(0.1 * (2 ** attempt))
+
+        yield session
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        raise
+    finally:
+        await session.close()
 
 
 # ── Bootstrap helper (development only) ──────────────────────────────

@@ -195,8 +195,7 @@ class QuestionGenerator:
         else:
             # Default broad categories for a general interview
             categories = [
-                "python", "javascript", "sql", "system_design",
-                "data_structures", "behavioral"
+                "python", "javascript", "sql", "behavioral"
             ]
 
         # Ensure behavioral is included
@@ -220,16 +219,10 @@ class QuestionGenerator:
             mapped = SKILL_TO_CATEGORY_MAP.get(skill_cat, [])
             question_categories.update(mapped)
 
-        # Always include system design and data structures for technical candidates
-        if question_categories:
-            question_categories.add("system_design")
-            question_categories.add("data_structures")
-
         # If no skills detected, return broad defaults
         if not question_categories:
             question_categories = {
-                "python", "javascript", "sql",
-                "system_design", "data_structures"
+                "python", "javascript", "sql"
             }
 
         return list(question_categories)
@@ -261,11 +254,15 @@ class QuestionGenerator:
         )
 
         if not pool:
-            # Fallback: any technical question at right difficulty
+            # Fallback: any technical question at right difficulty, EXCLUDING advanced categories
+            # unless they were explicitly in the requested categories
             pool = self.bank.filter_questions(
                 difficulties=difficulties,
                 question_type="technical",
             )
+            # Filter out system_design and data_structures unless explicitly requested
+            excluded = {"system_design", "data_structures"} - set(categories)
+            pool = [q for q in pool if q.category not in excluded]
 
         if not pool:
             return []
@@ -383,6 +380,8 @@ def generate_questions_for_candidate(
     experience_years: str = "Not specified",
     experience_level: str = "mid",
     num_questions: int = 10,
+    focus_categories: list = [],
+    difficulty_override: str = None,
 ) -> list:
     """
     Generate interview questions for a candidate.
@@ -406,13 +405,29 @@ def generate_questions_for_candidate(
         if match:
             exp_float = float(match.group(1))
     
-    # Generate using skills-based method
-    questions = _generator_instance.generate_for_skills(
-        skills=skills if skills else ["general"],
-        experience_years=exp_float,
-        num_questions=num_questions,
-        include_behavioral=True,
-    )
+    # If focus_categories are provided, use them directly
+    if focus_categories and len(focus_categories) > 0:
+        questions = _generator_instance.generate_mixed_interview(
+            num_questions=num_questions,
+            difficulty=difficulty_override or _level_to_difficulty(experience_level),
+            focus_categories=focus_categories,
+        )
+    elif difficulty_override:
+        # Use skills-based but with forced difficulty
+        questions = _generator_instance.generate_for_skills(
+            skills=skills if skills else ["general"],
+            experience_years=exp_float,
+            num_questions=num_questions,
+            include_behavioral=True,
+        )
+    else:
+        # Default: skills-based generation
+        questions = _generator_instance.generate_for_skills(
+            skills=skills if skills else ["general"],
+            experience_years=exp_float,
+            num_questions=num_questions,
+            include_behavioral=True,
+        )
     
     # Convert Question dataclass objects to dicts
     result = []
@@ -430,3 +445,14 @@ def generate_questions_for_candidate(
         })
     
     return result
+
+
+def _level_to_difficulty(level: str) -> str:
+    """Map experience level to difficulty string."""
+    mapping = {
+        "junior": "easy",
+        "mid": "medium",
+        "senior": "hard",
+        "lead": "hard",
+    }
+    return mapping.get(level, "medium")

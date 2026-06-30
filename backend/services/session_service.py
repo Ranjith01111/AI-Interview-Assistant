@@ -17,6 +17,7 @@ from backend.db.redis import (
     redis_set_bytes,
     redis_get_bytes,
     redis_delete,
+    redis_lock,
 )
 
 # Key prefixes for different data types
@@ -41,17 +42,18 @@ async def save_session_meta(
     experience: str,
     resume_text: str,
 ) -> None:
-    """Store lightweight session metadata in Redis."""
-    await redis_set_json(
-        f"{_PREFIX_SESSION}{session_id}",
-        {
-            "session_id": session_id,
-            "candidate_name": candidate_name,
-            "skills": skills,
-            "experience": experience,
-            "resume_text": resume_text,
-        },
-    )
+    """Store lightweight session metadata in Redis (mutex-protected)."""
+    async with redis_lock(f"lock:{_PREFIX_SESSION}{session_id}", timeout=10):
+        await redis_set_json(
+            f"{_PREFIX_SESSION}{session_id}",
+            {
+                "session_id": session_id,
+                "candidate_name": candidate_name,
+                "skills": skills,
+                "experience": experience,
+                "resume_text": resume_text,
+            },
+        )
 
 
 async def get_session_meta(session_id: str) -> Optional[Dict[str, Any]]:
@@ -89,8 +91,9 @@ async def get_conversation_chain(session_id: str) -> Optional[Any]:
 # ── Questions cache (JSON-safe representation) ──────────────────────
 
 async def save_questions_cache(session_id: str, questions: List[Dict]) -> None:
-    """Cache generated questions in Redis for fast retrieval."""
-    await redis_set_json(f"{_PREFIX_QUESTIONS}{session_id}", questions)
+    """Cache generated questions in Redis (mutex-protected to prevent duplicate generation)."""
+    async with redis_lock(f"lock:{_PREFIX_QUESTIONS}{session_id}", timeout=15):
+        await redis_set_json(f"{_PREFIX_QUESTIONS}{session_id}", questions)
 
 
 async def get_questions_cache(session_id: str) -> Optional[List[Dict]]:
@@ -101,8 +104,9 @@ async def get_questions_cache(session_id: str) -> Optional[List[Dict]]:
 # ── Interview state (current question index, etc.) ──────────────────
 
 async def save_interview_state(session_id: str, state: Dict[str, Any]) -> None:
-    """Store current interview progress."""
-    await redis_set_json(f"{_PREFIX_STATE}{session_id}", state)
+    """Store current interview progress (mutex-protected)."""
+    async with redis_lock(f"lock:{_PREFIX_STATE}{session_id}", timeout=10):
+        await redis_set_json(f"{_PREFIX_STATE}{session_id}", state)
 
 
 async def get_interview_state(session_id: str) -> Optional[Dict[str, Any]]:
@@ -113,13 +117,16 @@ async def get_interview_state(session_id: str) -> Optional[Dict[str, Any]]:
 # ── Answer feedback accumulator ──────────────────────────────────────
 
 async def add_answer_feedback(session_id: str, feedback_entry: Dict) -> None:
-    """Append a single answer's feedback to the session's list."""
+    """Append a single answer's feedback (mutex-protected read-modify-write)."""
     key = f"{_PREFIX_FEEDBACK}{session_id}"
-    existing = await redis_get_json(key)
-    if existing is None:
-        existing = []
-    existing.append(feedback_entry)
-    await redis_set_json(key, existing)
+    # Acquire a distributed lock to prevent concurrent requests from
+    # clobbering each other during this read-modify-write sequence.
+    async with redis_lock(f"lock:{key}", timeout=10):
+        existing = await redis_get_json(key)
+        if existing is None:
+            existing = []
+        existing.append(feedback_entry)
+        await redis_set_json(key, existing)
 
 
 async def get_all_feedback(session_id: str) -> List[Dict]:

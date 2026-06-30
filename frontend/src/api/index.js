@@ -1,4 +1,4 @@
-import { apiJSON, apiUpload } from './client.js';
+import { apiJSON, apiUpload, apiFetchLong } from './client.js';
 
 export const auth = {
   login:  (email, password) =>
@@ -25,19 +25,32 @@ export const interview = {
     return apiUpload('/resume/upload', fd);
   },
 
-  generateQuestions: (sessionId) =>
-    apiJSON(`/interview/generate-questions/${sessionId}`, { method:'POST' }),
+  generateQuestions: (sessionId, config = {}) =>
+    apiJSON(`/interview/generate-questions/${sessionId}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        preset_id: config.preset_id || null,
+        focus_categories: config.focus_categories || [],
+        num_questions: config.num_questions || 10,
+        difficulty: config.difficulty || null,
+      }),
+    }),
+
+  createCustomSession: () =>
+    apiJSON('/interview/setup-custom', { method: 'POST' }),
 
   startInterview: (sessionId) =>
     apiJSON(`/interview/start/${sessionId}`, { method:'POST' }),
 
   chat: (sessionId, message) =>
-    apiJSON('/interview/chat', { method:'POST', body: JSON.stringify({ session_id: sessionId, message }) }),
+    apiFetchLong('/interview/chat', { method:'POST', body: JSON.stringify({ session_id: sessionId, message }) }),
 
   getSummary: (sessionId) => apiJSON(`/interview/summary/${sessionId}`),
 
   saveVoiceSession: (results) =>
     apiJSON('/interview/voice-session', { method:'POST', body: JSON.stringify(results) }),
+
+  getPresets: () => apiJSON('/interview/presets'),
 };
 
 export const coding = {
@@ -52,6 +65,37 @@ export const coding = {
     apiJSON('/coding/submit', { method:'POST', body: JSON.stringify({ session_id: sessionId, challenge_id: challengeId, language, code }) }),
 
   getSubmissions: (sessionId) => apiJSON(`/coding/submissions/${sessionId}`),
+};
+
+export const leetcode = {
+  search: (query = '', difficulty = null, tags = [], limit = 50) =>
+    apiJSON('/leetcode/search', { method:'POST', body: JSON.stringify({ query, difficulty, tags, limit }) }),
+
+  searchByNumber: (number) =>
+    apiJSON('/leetcode/search', { method:'POST', body: JSON.stringify({ number, limit: 1 }) }),
+
+  getProblem: (titleSlug) => apiJSON(`/leetcode/problem/${titleSlug}`),
+
+  getDaily: () => apiJSON('/leetcode/daily'),
+
+  importProblem: (titleSlug, customTestCases = null) =>
+    apiJSON('/leetcode/import', { method:'POST', body: JSON.stringify({
+      title_slug: titleSlug,
+      custom_test_cases: customTestCases
+    })}),
+
+  getTags: () => apiJSON('/leetcode/tags'),
+};
+
+export const verbal = {
+  start: (sessionId = null, resumeText = null) =>
+    apiJSON('/verbal/start', { method:'POST', body: JSON.stringify({ session_id: sessionId, resume_text: resumeText }) }),
+
+  respond: (verbalSessionId, candidateMessage) =>
+    apiFetchLong('/verbal/respond', { method:'POST', body: JSON.stringify({ verbal_session_id: verbalSessionId, candidate_message: candidateMessage }) }),
+
+  end: (verbalSessionId) =>
+    apiFetchLong('/verbal/end', { method:'POST', body: JSON.stringify({ verbal_session_id: verbalSessionId }) }),
 };
 
 export const proctor = {
@@ -71,4 +115,5 @@ export const analytics = {
   strengths:  () => apiJSON('/analytics/strengths-weaknesses'),
   violations: () => apiJSON('/analytics/proctor-violations'),
   trend:      () => apiJSON('/analytics/performance-trend'),
+  candidateDetail: (sessionId) => apiJSON(`/analytics/candidate/${sessionId}`),
 };

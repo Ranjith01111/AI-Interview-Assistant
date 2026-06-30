@@ -13,7 +13,7 @@ from backend.core.security import get_current_active_user
 from backend.core.rate_limiter import limiter
 from backend.models.user import User
 
-router = APIRouter(prefix="/tts", tags=["TTS"], dependencies=[Depends(get_current_active_user)])
+router = APIRouter(prefix="/tts", tags=["TTS"])
 
 # Try edge-tts first, then gTTS
 _engine = None

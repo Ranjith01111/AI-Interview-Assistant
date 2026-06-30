@@ -1,6 +1,6 @@
 import { renderNavbar } from '../components/Navbar.js';
 import { renderSidebar } from '../components/Sidebar.js';
-import { auth, analytics } from '../api/index.js';
+import { auth, analytics, proctor } from '../api/index.js';
 import { apiJSON } from '../api/client.js';
 import { navigate } from '../main.js';
 import { Toast } from '../components/Toast.js';
@@ -20,7 +20,8 @@ let state = {
   search: '',
   sortBy: 'date',
   sortOrder: 'desc',
-  status: 'completed',
+  status: '',
+  dateRange: 'all',
   minScore: null,
   maxScore: null,
   skills: [],
@@ -36,15 +37,12 @@ export async function renderRecruiterDashboard(container) {
   renderNavbar(container);
 
   const layout = document.createElement('div');
-  layout.style.display = 'flex';
-  layout.style.height = 'calc(100vh - 60px)';
+  layout.className = 'dashboard-shell';
 
   layout.appendChild(renderSidebar('recruiter'));
 
   const main = document.createElement('div');
-  main.className = 'app-main';
-  main.style.flex = '1';
-  main.style.overflowY = 'auto';
+  main.className = 'dashboard-main';
 
   main.innerHTML = `
     <div class="page-content recruiter-dashboard">
@@ -80,6 +78,23 @@ export async function renderRecruiterDashboard(container) {
           <option value="in_progress">In Progress</option>
           <option value="pending">Pending</option>
           <option value="questions_generated">Questions Ready</option>
+          <option value="decision">All Decisions</option>
+          <option value="strong_hire">↳ Strong Hire</option>
+          <option value="hire">↳ Hire</option>
+          <option value="maybe">↳ Maybe</option>
+          <option value="no_hire">↳ No Hire</option>
+        </select>
+
+        <!-- Date Range Filter -->
+        <select id="rc-date-range" style="
+          padding: 10px 14px; border-radius: 8px;
+          border: 1px solid var(--border-color); background: var(--bg-main);
+          color: var(--text-primary); font-size: 0.85rem; min-width: 140px;
+        ">
+          <option value="all">All Time</option>
+          <option value="today">Today</option>
+          <option value="week">Last 7 Days</option>
+          <option value="month">Last 30 Days</option>
         </select>
 
         <!-- Score Range -->
@@ -126,36 +141,30 @@ export async function renderRecruiterDashboard(container) {
         overflow: hidden;
       ">
         <div style="overflow-x: auto;">
-          <table id="rc-table" style="width: 100%; border-collapse: collapse; text-align: left; min-width: 900px;">
+          <table id="rc-table" style="width: 100%; border-collapse: collapse; text-align: left; min-width: 760px; table-layout: fixed;">
             <thead style="background: var(--bg-hover); border-bottom: 1px solid var(--border-color);">
               <tr>
-                <th class="rc-th rc-sortable" data-sort="name" style="padding: 14px 16px; color: var(--text-muted); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; user-select: none;">
-                  Name <span class="sort-icon"></span>
+                <th class="rc-th rc-sortable" data-sort="name" style="padding: 12px 14px; color: var(--text-muted); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; user-select: none; width: 25%;">
+                  Candidate <span class="sort-icon"></span>
                 </th>
-                <th class="rc-th rc-sortable" data-sort="score" style="padding: 14px 16px; color: var(--text-muted); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; user-select: none;">
-                  Score <span class="sort-icon"></span>
+                <th class="rc-th rc-sortable" data-sort="score" style="padding: 12px 10px; color: var(--text-muted); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; user-select: none; width: 15%; text-align: center;">
+                  Top Score <span class="sort-icon"></span>
                 </th>
-                <th class="rc-th" style="padding: 14px 16px; color: var(--text-muted); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px;">
-                  Skills
+                <th class="rc-th" style="padding: 12px 10px; color: var(--text-muted); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; width: 15%; text-align: center;">
+                  Total Interviews
                 </th>
-                <th class="rc-th" style="padding: 14px 16px; color: var(--text-muted); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px;">
-                  Status
+                <th class="rc-th" style="padding: 12px 10px; color: var(--text-muted); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; width: 15%; text-align: center;">
+                  Total Violations
                 </th>
-                <th class="rc-th" style="padding: 14px 16px; color: var(--text-muted); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px;">
-                  Pipeline
+                <th class="rc-th rc-sortable" data-sort="date" style="padding: 12px 10px; color: var(--text-muted); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; user-select: none; width: 20%; text-align: right;">
+                  Latest Date <span class="sort-icon"></span>
                 </th>
-                <th class="rc-th" style="padding: 14px 16px; color: var(--text-muted); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px;">
-                  Recommendation
-                </th>
-                <th class="rc-th rc-sortable" data-sort="date" style="padding: 14px 16px; color: var(--text-muted); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; user-select: none;">
-                  Date <span class="sort-icon"></span>
-                </th>
-                <th class="rc-th" style="padding: 14px 16px; color: var(--text-muted); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px;">
-                  Actions
+                <th class="rc-th" style="padding: 12px 14px; color: var(--text-muted); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; width: 10%; text-align: right;">
+                  Expand
                 </th>
               </tr>
             </thead>
-            <tbody id="rc-table-body">
+            <tbody id="rc-table-body" style="position:relative">
               <tr><td colspan="8" style="padding: 40px; text-align: center; color: var(--text-muted);">Loading candidates...</td></tr>
             </tbody>
           </table>
@@ -233,6 +242,13 @@ function _bindEvents(main) {
     _fetchCandidates(main);
   });
 
+  // Date Range filter
+  main.querySelector('#rc-date-range').addEventListener('change', (e) => {
+    state.dateRange = e.target.value;
+    state.page = 1;
+    _fetchCandidates(main);
+  });
+
   // Score range filter
   main.querySelector('#rc-score-range').addEventListener('change', (e) => {
     const val = e.target.value;
@@ -293,6 +309,7 @@ function _bindEvents(main) {
   main.querySelector('#rc-reset-btn').addEventListener('click', () => {
     state.search = '';
     state.status = '';
+    state.dateRange = 'all';
     state.minScore = null;
     state.maxScore = null;
     state.skills = [];
@@ -301,7 +318,8 @@ function _bindEvents(main) {
     state.page = 1;
 
     main.querySelector('#rc-search').value = '';
-    main.querySelector('#rc-status').value = 'completed';
+    main.querySelector('#rc-status').value = '';
+    main.querySelector('#rc-date-range').value = 'all';
     main.querySelector('#rc-score-range').value = '';
     _renderSkillsDropdown(main);
     _fetchCandidates(main);
@@ -323,6 +341,7 @@ async function _fetchCandidates(main) {
 
     if (state.search) params.set('search', state.search);
     if (state.status) params.set('status', state.status);
+    if (state.dateRange && state.dateRange !== 'all') params.set('date_range', state.dateRange);
     if (state.minScore !== null) params.set('min_score', state.minScore);
     if (state.maxScore !== null) params.set('max_score', state.maxScore);
     if (state.skills.length > 0) params.set('skills', state.skills.join(','));
@@ -367,102 +386,190 @@ function _renderTable(main) {
   }
 
   tbody.innerHTML = '';
-  state.candidates.forEach(c => {
+  state.candidates.forEach((c, idx) => {
+    // 1. Parent Row
     const tr = document.createElement('tr');
     tr.style.borderBottom = '1px solid var(--border-color)';
     tr.style.transition = 'background 0.15s';
+    tr.style.cursor = 'pointer';
     tr.addEventListener('mouseenter', () => tr.style.background = 'var(--bg-hover)');
     tr.addEventListener('mouseleave', () => tr.style.background = 'transparent');
 
-    const score = c.average_score;
+    const score = c.highest_score;
     const scoreColor = _getScoreColor(score);
-    const scoreDisplay = score !== null ? score.toFixed(1) : '—';
+    const scoreDisplay = score ? score.toFixed(1) : '—';
 
-    const skillsBadges = (c.skills_detected || []).slice(0, 4).map(s =>
-      `<span style="
-        display: inline-block; padding: 2px 8px; border-radius: 4px;
-        background: rgba(245, 184, 0, 0.1); border: 1px solid rgba(245, 184, 0, 0.3);
-        color: var(--accent-gold); font-size: 0.72rem; margin: 2px 3px 2px 0;
-      ">${_escapeHtml(s)}</span>`
-    ).join('');
-    const moreSkills = (c.skills_detected || []).length > 4
-      ? `<span style="color: var(--text-muted); font-size: 0.72rem;">+${c.skills_detected.length - 4}</span>`
-      : '';
-
-    const statusBadge = _getStatusBadge(c.status);
-    const pipelineBadge = _getPipelineBadge(c.pipeline_stage);
-
-    const dateStr = c.created_at
-      ? new Date(c.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    const dateStr = c.latest_date
+      ? new Date(c.latest_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
       : '—';
-
+      
     tr.innerHTML = `
-      <td style="padding: 14px 16px;">
-        <div style="font-weight: 500; color: var(--text-primary);">${_escapeHtml(c.candidate_name)}</div>
-        <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 2px;">${c.email ? _escapeHtml(c.email) : '—'}</div>
+      <td style="padding: 12px 14px;">
+        <div style="font-weight: 600; color: var(--text-primary); font-size: 0.9rem;">${_escapeHtml(c.candidate_name)}</div>
+        <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">${c.email ? _escapeHtml(c.email) : '—'}</div>
       </td>
-      <td style="padding: 14px 16px;">
+      <td style="padding: 12px 10px; text-align: center;">
         <span style="
           display: inline-block; padding: 4px 10px; border-radius: 6px;
-          font-weight: 700; font-size: 0.9rem; color: ${scoreColor};
+          font-weight: 700; font-size: 0.85rem; color: ${scoreColor};
           background: ${scoreColor}15; border: 1px solid ${scoreColor}40;
         ">${scoreDisplay}</span>
       </td>
-      <td style="padding: 14px 16px; max-width: 220px;">
-        ${skillsBadges}${moreSkills}
+      <td style="padding: 12px 10px; text-align: center; color: var(--text-secondary); font-weight: 500;">
+        ${c.total_sessions}
       </td>
-      <td style="padding: 14px 16px;">
-        ${statusBadge}
-      </td>
-      <td style="padding: 14px 16px;">
-        ${pipelineBadge}
-      </td>
-      <td style="padding: 14px 16px;">
+      <td style="padding: 12px 10px; text-align: center;">
         <span style="
-          font-size: 0.82rem; font-weight: 600;
-          color: ${c.recommendation && c.recommendation.toLowerCase().includes('strong') ? 'var(--accent-emerald)' :
-                  c.recommendation && c.recommendation.toLowerCase().includes('no') ? 'var(--accent-red)' :
-                  c.recommendation && c.recommendation.toLowerCase().includes('hire') ? 'var(--accent-amber)' : 'var(--text-muted)'};
-        ">${c.recommendation || '—'}</span>
+          display: inline-block; padding: 3px 8px; border-radius: 6px; font-weight: 600; font-size: 0.78rem;
+          color: ${c.total_violations > 5 ? 'var(--accent-red)' : c.total_violations > 0 ? 'var(--accent-amber)' : 'var(--accent-emerald)'};
+          background: ${c.total_violations > 5 ? 'rgba(239,68,68,0.1)' : c.total_violations > 0 ? 'rgba(245,184,0,0.1)' : 'rgba(16,185,129,0.1)'};
+          border: 1px solid ${c.total_violations > 5 ? 'rgba(239,68,68,0.3)' : c.total_violations > 0 ? 'rgba(245,184,0,0.3)' : 'rgba(16,185,129,0.3)'};
+        ">${c.total_violations}</span>
       </td>
-      <td style="padding: 14px 16px; color: var(--text-muted); font-size: 0.85rem;">
+      <td style="padding: 12px 10px; text-align: right; color: var(--text-muted); font-size: 0.8rem;">
         ${dateStr}
       </td>
-      <td style="padding: 14px 16px;">
-        <button class="rc-view-btn" data-sid="${c.session_id}" style="
-          padding: 6px 12px; border-radius: 6px; border: 1px solid var(--accent-gold);
-          background: transparent; color: var(--accent-gold); font-size: 0.8rem;
-          cursor: pointer; font-weight: 500; transition: all 0.15s;
-        ">View Summary</button>
+      <td style="padding: 12px 14px; text-align: right;">
+        <button class="btn btn-sm btn-outline" style="border: none; background: transparent; color: var(--text-muted); font-size: 1.2rem; cursor: pointer;">
+          <span class="expand-icon">▼</span>
+        </button>
       </td>
     `;
 
+    // 2. Child Row (Accordion Content)
+    const childTr = document.createElement('tr');
+    childTr.style.display = 'none';
+    childTr.style.background = 'var(--bg-main)';
+    childTr.style.borderBottom = '1px solid var(--border-color)';
+    
+    let sessionsHtml = c.sessions.map(s => {
+      const sScore = s.average_score;
+      const sScoreColor = _getScoreColor(sScore);
+      const sScoreDisplay = sScore !== null ? sScore.toFixed(1) : '—';
+      const sDateStr = s.created_at ? new Date(s.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+      const statusBadge = _getStatusBadge(s.status);
+      const pipelineBadge = _getDecisionBadge(s.recommendation, s.pipeline_stage);
+      
+      const skillsBadges = (s.skills_detected || []).slice(0, 3).map(sk =>
+        `<span style="display: inline-block; padding: 2px 6px; border-radius: 4px; background: rgba(245, 184, 0, 0.1); border: 1px solid rgba(245, 184, 0, 0.3); color: var(--accent-gold); font-size: 0.7rem; margin: 2px 3px 2px 0;">${_escapeHtml(sk)}</span>`
+      ).join('');
+
+      return `
+        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+          <td style="padding: 8px 10px; font-size: 0.8rem; color: var(--text-secondary);">${sDateStr}</td>
+          <td style="padding: 8px 10px;">${statusBadge}</td>
+          <td style="padding: 8px 10px;">
+            <span style="font-weight: 700; color: ${sScoreColor};">${sScoreDisplay}</span>
+          </td>
+          <td style="padding: 8px 10px; max-width: 150px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;">${skillsBadges}</td>
+          <td style="padding: 8px 10px; text-align: center;">
+            <span style="color: ${s.violations_count > 0 ? 'var(--accent-red)' : 'var(--text-muted)'}; font-size: 0.75rem;">${s.violations_count || 0}</span>
+          </td>
+          <td style="padding: 8px 10px;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              ${pipelineBadge}
+              <select class="rc-decision-select" data-sid="${s.session_id}" style="
+                padding:2px 4px; border-radius:4px;
+                border:1px solid var(--border-color); background:var(--bg-card);
+                color:var(--text-primary); font-size:0.7rem; cursor:pointer; max-width: 90px;
+              ">
+                <option value="" ${!s.recommendation ? 'selected' : ''}>Change</option>
+                <option value="Strong Hire" ${s.recommendation === 'Strong Hire' ? 'selected' : ''}>Strong Hire</option>
+                <option value="Hire" ${s.recommendation === 'Hire' ? 'selected' : ''}>Hire</option>
+                <option value="Maybe" ${(s.recommendation === 'Maybe' || s.recommendation === 'Maybe — needs improvement') ? 'selected' : ''}>Maybe</option>
+                <option value="No Hire" ${s.recommendation === 'No Hire' ? 'selected' : ''}>No Hire</option>
+              </select>
+            </div>
+          </td>
+          <td style="padding: 8px 10px; text-align: right;">
+            <button class="rc-view-btn" data-sid="${s.session_id}" style="
+              padding: 4px 8px; border-radius: 4px; border: 1px solid var(--accent-gold);
+              background: transparent; color: var(--accent-gold); font-size: 0.7rem;
+              cursor: pointer; font-weight: 500;
+            ">View Report</button>
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+    childTr.innerHTML = `
+      <td colspan="6" style="padding: 0;">
+        <div style="padding: 12px 14px 12px 30px; border-left: 2px solid var(--accent-gold);">
+          <h4 style="margin-bottom: 8px; font-size: 0.85rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">Interview Sessions (${c.total_sessions})</h4>
+          <table style="width: 100%; border-collapse: collapse; text-align: left;">
+            <thead>
+              <tr style="border-bottom: 1px solid rgba(255,255,255,0.1); color: var(--text-muted); font-size: 0.7rem; text-transform: uppercase;">
+                <th style="padding: 6px 10px; font-weight: 600;">Date</th>
+                <th style="padding: 6px 10px; font-weight: 600;">Status</th>
+                <th style="padding: 6px 10px; font-weight: 600;">Score</th>
+                <th style="padding: 6px 10px; font-weight: 600;">Skills</th>
+                <th style="padding: 6px 10px; font-weight: 600; text-align: center;">Violations</th>
+                <th style="padding: 6px 10px; font-weight: 600;">Decision</th>
+                <th style="padding: 6px 10px; font-weight: 600; text-align: right;">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${sessionsHtml}
+            </tbody>
+          </table>
+        </div>
+      </td>
+    `;
+
+    // Toggle logic
+    tr.addEventListener('click', () => {
+      const isExpanded = childTr.style.display !== 'none';
+      childTr.style.display = isExpanded ? 'none' : 'table-row';
+      tr.querySelector('.expand-icon').textContent = isExpanded ? '▼' : '▲';
+      tr.style.background = isExpanded ? 'transparent' : 'var(--bg-hover)';
+    });
+
     tbody.appendChild(tr);
+    tbody.appendChild(childTr);
   });
 
   // Bind view buttons
   tbody.querySelectorAll('.rc-view-btn').forEach(btn => {
-    btn.addEventListener('mouseenter', () => {
-      btn.style.background = 'var(--accent-gold)';
-      btn.style.color = '#1a1a2e';
-    });
-    btn.addEventListener('mouseleave', () => {
-      btn.style.background = 'transparent';
-      btn.style.color = 'var(--accent-gold)';
-    });
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
       navigate(`/interview/summary/${btn.dataset.sid}`);
     });
   });
-}
 
+  // Bind decision change dropdowns
+  tbody.querySelectorAll('.rc-decision-select').forEach(sel => {
+    sel.addEventListener('click', (e) => e.stopPropagation());
+    sel.addEventListener('change', async (e) => {
+      e.stopPropagation();
+      const sid = sel.dataset.sid;
+      const newDecision = sel.value;
+      if (!newDecision) return;
+
+      try {
+        await apiJSON(`/recruiter/candidates/${sid}/decision`, {
+          method: 'PUT',
+          body: JSON.stringify({ recommendation: newDecision }),
+        });
+
+        Toast.success(`Updated to "${newDecision}"`, '✓');
+        
+        // Refresh to get updated pipeline badges
+        _fetchCandidates(main);
+        
+      } catch (err) {
+        Toast.error(err.message || 'Failed to update decision', 'Error');
+        sel.value = '';
+      }
+    });
+  });
+}
 
 // ── Render Helpers ─────────────────────────────────────────────────────────────
 
 function _renderLoading(main) {
   const tbody = main.querySelector('#rc-table-body');
   tbody.innerHTML = `
-    <tr><td colspan="7" style="padding: 40px; text-align: center; color: var(--text-muted);">
+    <tr><td colspan="8" style="padding: 40px; text-align: center; color: var(--text-muted);">
       <div style="display: inline-block; width: 20px; height: 20px; border: 2px solid var(--accent-gold); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
       <div style="margin-top: 8px;">Loading candidates...</div>
     </td></tr>
@@ -472,7 +579,7 @@ function _renderLoading(main) {
 function _renderEmpty(main, message) {
   const tbody = main.querySelector('#rc-table-body');
   tbody.innerHTML = `
-    <tr><td colspan="7" style="padding: 50px; text-align: center; color: var(--text-muted);">
+    <tr><td colspan="8" style="padding: 50px; text-align: center; color: var(--text-muted);">
       <div style="font-size: 2rem; margin-bottom: 8px;">📋</div>
       <div>${message}</div>
     </td></tr>
@@ -584,17 +691,31 @@ function _getStatusBadge(status) {
 
 
 // ── Pipeline Stage Badge ───────────────────────────────────────────────────────
-function _getPipelineBadge(stage) {
-  const config = {
-    screening: { label: '📋 Screening', color: '#6b7280' },
-    interview: { label: '🎤 Interview', color: '#3b82f6' },
+function _getDecisionBadge(recommendation, pipelineStage) {
+  // Show actual recommendation with distinct color per decision type
+  if (recommendation) {
+    const decisionConfig = {
+      'Strong Hire': { icon: '🌟', color: '#10b981', bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.4)' },
+      'Hire':        { icon: '✅', color: '#34d399', bg: 'rgba(52,211,153,0.10)', border: 'rgba(52,211,153,0.35)' },
+      'Maybe':       { icon: '🤔', color: '#f59e0b', bg: 'rgba(245,158,11,0.10)', border: 'rgba(245,158,11,0.35)' },
+      'Maybe — needs improvement': { icon: '🤔', color: '#f59e0b', bg: 'rgba(245,158,11,0.10)', border: 'rgba(245,158,11,0.35)' },
+      'No Hire':     { icon: '❌', color: '#ef4444', bg: 'rgba(239,68,68,0.10)', border: 'rgba(239,68,68,0.35)' },
+    };
+    const d = decisionConfig[recommendation] || { icon: '⚖️', color: '#8b5cf6', bg: 'rgba(139,92,246,0.10)', border: 'rgba(139,92,246,0.35)' };
+    return `<span style="display:inline-block;padding:3px 8px;border-radius:6px;font-size:0.75rem;font-weight:600;color:${d.color};background:${d.bg};border:1px solid ${d.border};white-space:nowrap;">${d.icon} ${recommendation}</span>`;
+  }
+
+  // Fallback to pipeline stage if no decision yet
+  const stageConfig = {
+    screening:  { label: '📋 Screening', color: '#6b7280' },
+    interview:  { label: '🎤 Interview', color: '#3b82f6' },
     evaluation: { label: '📊 Evaluation', color: '#f59e0b' },
-    decision: { label: '⚖️ Decision', color: '#8b5cf6' },
-    hired: { label: '✅ Hired', color: '#10b981' },
-    rejected: { label: '❌ Rejected', color: '#ef4444' },
+    decision:   { label: '⚖️ Pending', color: '#8b5cf6' },
+    hired:      { label: '✅ Hired', color: '#10b981' },
+    rejected:   { label: '❌ Rejected', color: '#ef4444' },
   };
-  const c = config[stage] || config.screening;
-  return `<span style="font-size: 0.8rem; color: ${c.color}; font-weight: 500;">${c.label}</span>`;
+  const c = stageConfig[pipelineStage] || stageConfig.screening;
+  return `<span style="font-size:0.78rem;color:${c.color};font-weight:500;white-space:nowrap;">${c.label}</span>`;
 }
 
 

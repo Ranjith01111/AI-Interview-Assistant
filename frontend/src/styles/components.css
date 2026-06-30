@@ -14,12 +14,13 @@
   top: 0;
   z-index: 100;
 }
-.navbar-brand { display: flex; align-items: center; gap: var(--spacing-sm); font-weight: 700; font-size: 1rem; color: var(--text-primary); text-decoration: none; }
+.navbar-brand { display: flex; align-items: center; gap: var(--spacing-sm); font-weight: 700; font-size: 1rem; color: var(--text-primary); text-decoration: none; cursor: pointer; }
 .navbar-brand span { background: var(--grad-primary); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
 .navbar-spacer { flex: 1; }
 .navbar-user { display: flex; align-items: center; gap: var(--spacing-sm); }
 .user-avatar { width: 34px; height: 34px; border-radius: 50%; background: var(--grad-primary); display: flex; align-items: center; justify-content: center; font-size: 0.875rem; font-weight: 700; color: #fff; }
 .user-name { font-size: 0.875rem; font-weight: 500; color: var(--text-secondary); }
+.navbar-role { font-size: 0.72rem; color: var(--text-muted); }
 .logout-btn { background: none; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 5px 12px; color: var(--text-muted); font-size: 0.8rem; cursor: pointer; font-family: var(--font-sans); transition: var(--transition); }
 .logout-btn:hover { color: var(--text-primary); border-color: var(--border-light); }
 
@@ -182,5 +183,4 @@
 .feedback-tag.strength { background: rgba(16,185,129,0.15); color: #6ee7b7; }
 .feedback-tag.gap { background: rgba(245,158,11,0.15); color: #fcd34d; }
 
-/* Ping animation */
-@keyframes ping { 75%,100% { transform: scale(1.6); opacity: 0; } }
+

@@ -37,13 +37,13 @@ export async function renderCandidateDashboard(container) {
         <div class="interview-mode-cards">
           <div class="mode-card" id="new-interview-btn">
             <div class="mode-icon">💬</div>
-            <h3>Text Interview</h3>
-            <p>Resume-based interview with AI-generated questions, coding challenges, and detailed feedback</p>
+            <h3>Technical Interview</h3>
+            <p>Upload a resume or manually configure your interview with AI-generated questions and coding challenges.</p>
             <span class="mode-tag">Interview + Coding</span>
           </div>
           <div class="mode-card voice-mode" id="voice-interview-btn">
             <div class="mode-icon">🎤</div>
-            <h3>Voice Interview</h3>
+            <h3>General HR</h3>
             <p>HR-style phone call simulation to evaluate communication skills and fluency</p>
             <span class="mode-tag">Communication</span>
           </div>

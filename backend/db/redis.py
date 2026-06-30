@@ -230,3 +230,28 @@ def _mark_unavailable():
     global _redis_available, _redis_client
     _redis_available = False
     _redis_client = None
+
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def redis_lock(lock_name: str, timeout: int = 10, sleep: float = 0.1):
+    """
+    Mutex Lock to prevent cache race conditions.
+    Yields True if lock acquired, False otherwise (or if Redis is down).
+    """
+    client = await _safe_client()
+    if not client:
+        yield False
+        return
+
+    # Use redis.lock
+    lock = client.lock(lock_name, timeout=timeout, sleep=sleep)
+    acquired = await lock.acquire(blocking=True)
+    try:
+        yield acquired
+    finally:
+        if acquired:
+            try:
+                await lock.release()
+            except Exception:
+                pass

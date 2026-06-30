@@ -48,10 +48,11 @@ Unlike typical AI interview tools that rely on expensive cloud APIs (OpenAI, Ant
 
 The platform supports **text interviews**, **voice interviews**, **live coding assessments**, and **AI-driven proctoring** — suitable for both individual candidate practice and enterprise recruitment pipelines.
 
-### 🚀 Recent Updates (v2.1.1)
-- **Recruiter Registration Fixed**: Resolved backend schema and pycache issues preventing the successful creation of recruiter accounts.
-- **Offline NLP Engine Summaries**: Updated the frontend and backend integration so candidate session Q&As correctly parse the offline agent's updated `score_breakdown` schema, restoring the Session Summary reports.
-- **Dashboard Data Integrity**: Corrected frontend state logic to correctly render valid `0.0` scores rather than defaulting to empty dashes.
+### 🚀 Recent Updates (v2.2.0)
+- **Coding Sandbox Enhancements**: Stabilized cross-platform code execution for Python, JavaScript, C++, and Java. Fixed `asyncio` subprocess compatibility issues on Windows and improved compiler fallback logic.
+- **Backend Resilience Framework**: Implemented robust HTTP 500 defenses including global payload sniffing, strict 15-second database timeouts, exponential backoff for external service calls, and Redis-based mutex locks to prevent race conditions.
+- **Streamlined Interview Flow**: Unified text and coding assessments into a seamless progression with automated transitions, enforced full-screen proctoring, and comprehensive dual-score final reports.
+- **Recruiter Registration Fixed**: Resolved backend schema and validation logic issues preventing recruiter sign-ups.
 
 ---
 

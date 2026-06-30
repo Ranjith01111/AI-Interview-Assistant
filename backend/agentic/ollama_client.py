@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional, Union
 import httpx
 
 from .agent_config import get_agentic_config, AgenticConfig
+from backend.core.resilience import retry_with_backoff
 
 # ── Logger Setup ─────────────────────────────────────────────────────────────
 try:
@@ -129,6 +130,7 @@ class OllamaClient:
 
     # ── Generate (Completion) ────────────────────────────────────────────────
 
+    @retry_with_backoff(retries=3, exceptions=(httpx.RequestError, httpx.TimeoutException, OSError))
     async def generate(
         self,
         model: str,
@@ -201,23 +203,24 @@ class OllamaClient:
                 )
                 return None
 
-        except httpx.TimeoutException:
+        except httpx.TimeoutException as e:
             logger.warning(
                 "ollama_generate_timeout",
                 model=model,
                 timeout_s=effective_timeout,
             )
-            return None
+            raise e
         except (httpx.ConnectError, OSError) as e:
             logger.warning("ollama_generate_connection_error", model=model, error=str(e))
             self._available = False
-            return None
+            raise e
         except Exception as e:
             logger.error("ollama_generate_unexpected_error", model=model, error=str(e))
-            return None
+            raise e
 
     # ── Chat (Multi-turn) ────────────────────────────────────────────────────
 
+    @retry_with_backoff(retries=3, exceptions=(httpx.RequestError, httpx.TimeoutException, OSError))
     async def chat(
         self,
         model: str,
@@ -294,19 +297,20 @@ class OllamaClient:
                 )
                 return None
 
-        except httpx.TimeoutException:
+        except httpx.TimeoutException as e:
             logger.warning("ollama_chat_timeout", model=model, timeout_s=effective_timeout)
-            return None
+            raise e
         except (httpx.ConnectError, OSError) as e:
             logger.warning("ollama_chat_connection_error", model=model, error=str(e))
             self._available = False
-            return None
+            raise e
         except Exception as e:
             logger.error("ollama_chat_unexpected_error", model=model, error=str(e))
-            return None
+            raise e
 
     # ── Embed ────────────────────────────────────────────────────────────────
 
+    @retry_with_backoff(retries=3, exceptions=(httpx.RequestError, httpx.TimeoutException, OSError))
     async def embed(
         self,
         model: str,
@@ -380,16 +384,16 @@ class OllamaClient:
                 )
                 return None
 
-        except httpx.TimeoutException:
+        except httpx.TimeoutException as e:
             logger.warning("ollama_embed_timeout", model=model, timeout_s=effective_timeout)
-            return None
+            raise e
         except (httpx.ConnectError, OSError) as e:
             logger.warning("ollama_embed_connection_error", model=model, error=str(e))
             self._available = False
-            return None
+            raise e
         except Exception as e:
             logger.error("ollama_embed_unexpected_error", model=model, error=str(e))
-            return None
+            raise e
 
     # ── Batch Embed ──────────────────────────────────────────────────────────
 

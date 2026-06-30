@@ -193,22 +193,11 @@ class SandboxService:
                 "error": violation,
             }
 
-        # SECURITY: Require Docker for code execution.
+        # SECURITY: Require Docker for code execution, but use local fallback if unavailable
         docker_ok = await self.check_docker_available()
         if not docker_ok:
-            # Fallback: use local subprocess for interpreted languages (Python, JS)
-            if lang in ("python", "javascript"):
-                logger.warning("sandbox_using_local_fallback", language=lang)
-                return await self._execute_local(lang, code, test_cases, time_limit)
-            else:
-                logger.warning("sandbox_docker_unavailable", language=lang)
-                return {
-                    "status": "Sandbox Unavailable",
-                    "score": 0,
-                    "results": [],
-                    "error": f"Code execution for {lang} requires Docker. Python and JavaScript work without Docker.",
-                    "sandbox_type": "None (Docker required for compiled languages)"
-                }
+            logger.warning("sandbox_using_local_fallback", language=lang)
+            return await self._execute_local(lang, code, test_cases, time_limit, memory_limit)
 
         try:
             return await self._execute_docker(lang, code, test_cases, time_limit, memory_limit)
@@ -356,32 +345,33 @@ class SandboxService:
             src_file.write_text(code, encoding="utf-8")
 
             # ── 1. Compilation Phase (C++ and Java) ────────────────────────
+            DOCKER_CMD = "docker.exe" if os.name == "nt" else "docker"
             is_compiled = lang in ["c", "cpp", "java"]
             if is_compiled:
                 comp_container_name = f"{sandbox_id}_compile"
                 if lang == "c":
-                    comp_cmd = ["docker", "create", "--name", comp_container_name, "-w", "/app", cfg["image"], "gcc", "-O2", cfg["file"], "-o", "main", "-lm"]
+                    comp_cmd = [DOCKER_CMD, "create", "--name", comp_container_name, "-w", "/app", cfg["image"], "gcc", "-O2", cfg["file"], "-o", "main", "-lm"]
                 elif lang == "cpp":
-                    comp_cmd = ["docker", "create", "--name", comp_container_name, "-w", "/app", cfg["image"], "g++", "-O3", cfg["file"], "-o", "main"]
+                    comp_cmd = [DOCKER_CMD, "create", "--name", comp_container_name, "-w", "/app", cfg["image"], "g++", "-O3", cfg["file"], "-o", "main"]
                 else:  # java
-                    comp_cmd = ["docker", "create", "--name", comp_container_name, "-w", "/app", cfg["image"], "javac", cfg["file"]]
+                    comp_cmd = [DOCKER_CMD, "create", "--name", comp_container_name, "-w", "/app", cfg["image"], "javac", cfg["file"]]
 
                 # Create compile container
                 proc = await asyncio.create_subprocess_exec(*comp_cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
                 await proc.communicate()
 
                 # Copy source file in
-                cp_proc = await asyncio.create_subprocess_exec("docker", "cp", str(src_file), f"{comp_container_name}:/app/{cfg['file']}")
+                cp_proc = await asyncio.create_subprocess_exec(DOCKER_CMD, "cp", cfg["file"], f"{comp_container_name}:/app/{cfg['file']}", cwd=temp_dir)
                 await cp_proc.communicate()
 
                 # Start compile container and capture stdout/stderr
-                start_proc = await asyncio.create_subprocess_exec("docker", "start", "-a", comp_container_name, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+                start_proc = await asyncio.create_subprocess_exec(DOCKER_CMD, "start", "-a", comp_container_name, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
                 stdout, stderr = await start_proc.communicate()
 
                 # Check compile status
                 if start_proc.returncode != 0:
                     # Clean compile container
-                    rm_proc = await asyncio.create_subprocess_exec("docker", "rm", "-f", comp_container_name)
+                    rm_proc = await asyncio.create_subprocess_exec(DOCKER_CMD, "rm", "-f", comp_container_name)
                     await rm_proc.communicate()
                     
                     return {
@@ -394,15 +384,15 @@ class SandboxService:
 
                 # Copy compiled binary/classes out to host temp directory
                 if lang == "cpp":
-                    cp_out = await asyncio.create_subprocess_exec("docker", "cp", f"{comp_container_name}:/app/main", str(temp_path / "main"))
+                    cp_out = await asyncio.create_subprocess_exec(DOCKER_CMD, "cp", f"{comp_container_name}:/app/main", "main", cwd=temp_dir)
                     await cp_out.communicate()
                 else: # java
                     # Copy all class files
-                    cp_out = await asyncio.create_subprocess_exec("docker", "cp", f"{comp_container_name}:/app/.", str(temp_path))
+                    cp_out = await asyncio.create_subprocess_exec(DOCKER_CMD, "cp", f"{comp_container_name}:/app/.", ".", cwd=temp_dir)
                     await cp_out.communicate()
 
                 # Clean up compile container
-                rm_proc = await asyncio.create_subprocess_exec("docker", "rm", comp_container_name)
+                rm_proc = await asyncio.create_subprocess_exec(DOCKER_CMD, "rm", comp_container_name)
                 await rm_proc.communicate()
 
             # ── 2. Run Phase (for each test case) ──────────────────────────
@@ -424,7 +414,7 @@ class SandboxService:
                 # Enforce network none, memory limit, and read stdin
                 exec_command = f"{cfg['run_cmd']} < input.txt"
                 docker_cmd = [
-                    "docker", "create",
+                    DOCKER_CMD, "create",
                     "--name", run_container_name,
                     "--network", "none",
                     "--memory", f"{memory_limit}m",
@@ -441,13 +431,13 @@ class SandboxService:
 
                 # Copy code/binaries and input.txt in
                 # Copy everything in host temp_path directory to container /app/
-                cp_proc = await asyncio.create_subprocess_exec("docker", "cp", f"{temp_dir}/.", f"{run_container_name}:/app/")
+                cp_proc = await asyncio.create_subprocess_exec(DOCKER_CMD, "cp", ".", f"{run_container_name}:/app/", cwd=temp_dir)
                 await cp_proc.communicate()
 
                 # Run container with time limits
                 start_time = time.perf_counter()
                 run_proc = await asyncio.create_subprocess_exec(
-                    "docker", "start", "-a", run_container_name,
+                    DOCKER_CMD, "start", "-a", run_container_name,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE
                 )
@@ -462,14 +452,14 @@ class SandboxService:
                     timed_out = True
                     elapsed_time = time_limit * 1000.0
                     # Kill container forcefully
-                    kill_proc = await asyncio.create_subprocess_exec("docker", "kill", run_container_name)
+                    kill_proc = await asyncio.create_subprocess_exec(DOCKER_CMD, "kill", run_container_name)
                     await kill_proc.communicate()
 
                 # Capture exit code
                 exit_code = run_proc.returncode
 
                 # Clean container
-                rm_proc = await asyncio.create_subprocess_exec("docker", "rm", "-f", run_container_name)
+                rm_proc = await asyncio.create_subprocess_exec(DOCKER_CMD, "rm", "-f", run_container_name)
                 await rm_proc.communicate()
 
                 # Determine execution status
@@ -551,9 +541,11 @@ class SandboxService:
         }
 
         # For non-python, check if command exists
+        resolved_commands = {"python": sys.executable}
         if lang != "python":
             cmd_to_check = local_commands.get(lang)
-            if not cmd_to_check or not shutil.which(cmd_to_check):
+            resolved_cmd = shutil.which(cmd_to_check)
+            if not resolved_cmd:
                 return {
                     "status": "System Error",
                     "score": 0,
@@ -561,6 +553,20 @@ class SandboxService:
                     "results": [],
                     "compile_error": f"Language runtime '{cmd_to_check or lang}' not found. Install it or use Python."
                 }
+            resolved_commands[lang] = resolved_cmd
+            
+            # Need 'java' runtime for java, not just javac
+            if lang == "java":
+                java_runtime = shutil.which("java")
+                if not java_runtime:
+                    return {
+                        "status": "System Error",
+                        "score": 0,
+                        "sandbox_type": warning,
+                        "results": [],
+                        "compile_error": f"Java runtime (JRE) not found."
+                    }
+                resolved_commands["java_run"] = java_runtime
 
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
@@ -613,7 +619,7 @@ class SandboxService:
 
             if lang == "c":
                 binary_name = "main.exe" if os.name == "nt" else "main"
-                comp_cmd = ["gcc", "-O2", "main.c", "-o", binary_name, "-lm"]
+                comp_cmd = [resolved_commands["c"], "-O2", "main.c", "-o", binary_name, "-lm"]
                 result = await asyncio.to_thread(_run_sync, comp_cmd, temp_dir)
                 if result.returncode != 0:
                     return {
@@ -627,7 +633,7 @@ class SandboxService:
 
             elif lang == "cpp":
                 binary_name = "main.exe" if os.name == "nt" else "main"
-                comp_cmd = ["g++", "-O3", "main.cpp", "-o", binary_name]
+                comp_cmd = [resolved_commands["cpp"], "-O3", "main.cpp", "-o", binary_name]
                 result = await asyncio.to_thread(_run_sync, comp_cmd, temp_dir)
                 if result.returncode != 0:
                     return {
@@ -640,7 +646,7 @@ class SandboxService:
                 exec_cmd = [str(temp_path / binary_name)]
 
             elif lang == "java":
-                comp_cmd = ["javac", "Solution.java"]
+                comp_cmd = [resolved_commands["java"], "Solution.java"]
                 result = await asyncio.to_thread(_run_sync, comp_cmd, temp_dir)
                 if result.returncode != 0:
                     return {
@@ -650,12 +656,12 @@ class SandboxService:
                         "results": [],
                         "compile_error": result.stderr.decode("utf-8", errors="replace") or result.stdout.decode("utf-8", errors="replace")
                     }
-                exec_cmd = ["java", "-cp", temp_dir, "Solution"]
+                exec_cmd = [resolved_commands["java_run"], "-cp", temp_dir, "Solution"]
 
             elif lang == "python":
                 exec_cmd = [sys.executable, str(src_file)]
             elif lang == "javascript":
-                exec_cmd = ["node", str(src_file)]
+                exec_cmd = [resolved_commands["javascript"], str(src_file)]
 
             # ── 2. Run each test case ──────────────────────────────────────
             for idx, tc in enumerate(test_cases):

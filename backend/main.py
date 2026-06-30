@@ -16,6 +16,7 @@ import traceback
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
@@ -26,6 +27,7 @@ from backend.db.session import init_db, close_db, async_engine
 from backend.db.redis import init_redis, close_redis
 from backend.core.rate_limiter import limiter
 from backend.core.middleware import SecurityHeadersMiddleware, RequestLoggingMiddleware, RequestBodySizeLimitMiddleware
+from backend.core.resilience import ServiceUnavailableError
 
 
 # ── Structured logger ────────────────────────────────────────────────────────
@@ -68,6 +70,8 @@ recruiter_router = _safe_import_router("backend.routes.recruiter_routes")
 notes_router = _safe_import_router("backend.routes.notes_routes")
 export_router = _safe_import_router("backend.routes.export_routes")
 proctoring_detail_router = _safe_import_router("backend.routes.proctoring_detail_routes")
+leetcode_router = _safe_import_router("backend.routes.leetcode_routes")
+verbal_router = _safe_import_router("backend.routes.verbal_routes")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -90,7 +94,7 @@ async def lifespan(app: FastAPI):
     if _failed_imports:
         for msg in _failed_imports:
             logger.warning("route_import_failed", detail=msg)
-        print(f"⚠️  {len(_failed_imports)} route(s) failed to import — app starting without them")
+        print(f"[WARNING] {len(_failed_imports)} route(s) failed to import - app starting without them")
 
     # 1. Database initialization (with error recovery)
     db_ready = False
@@ -101,7 +105,7 @@ async def lifespan(app: FastAPI):
         db_ready = True
     except Exception as e:
         logger.error("database_init_failed", error=str(e))
-        print(f"⚠️  Database init failed: {e}")
+        print(f"[WARNING] Database init failed: {e}")
 
     # 2. Auto-migration (skip if DB not ready)
     if db_ready:
@@ -132,15 +136,15 @@ async def lifespan(app: FastAPI):
         logger.info("redis_connected")
     except Exception as e:
         logger.warning("redis_connection_failed", error=str(e))
-        print(f"⚠️  Redis not available: {e} — app running without cache")
+        print(f"[WARNING] Redis not available: {e} - app running without cache")
 
+    # Note: routes_loaded is logged after yield (routers registered post-lifespan)
     logger.info(
         "application_ready",
         host=settings.BACKEND_HOST,
         port=settings.BACKEND_PORT,
         db_ready=db_ready,
         redis_ready=redis_ready,
-        routes_loaded=len([r for r in _loaded_routers if r]),
         routes_failed=len(_failed_imports),
     )
 
@@ -180,14 +184,14 @@ app = FastAPI(
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    """Catch ALL unhandled exceptions and return clean JSON."""
+    """Catch ALL unhandled exceptions and return clean JSON (no traceback to client)."""
     tb = traceback.format_exc()
     logger.error(
         "unhandled_exception",
         path=str(request.url.path),
         method=request.method,
         error=str(exc),
-        traceback=tb,
+        traceback=tb,  # logged server-side only
     )
     return JSONResponse(
         status_code=500,
@@ -195,6 +199,31 @@ async def global_exception_handler(request: Request, exc: Exception):
             "success": False,
             "detail": "Internal server error. Please try again.",
             "error_type": type(exc).__name__,
+            # traceback intentionally omitted from response for security
+        },
+    )
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Return 400 Bad Request for validation errors."""
+    errors = exc.errors()
+    error_msg = "; ".join([f"{'.'.join(str(loc) for loc in e['loc'])}: {e['msg']}" for e in errors])
+    logger.warning("input_validation_failed", path=request.url.path, errors=error_msg)
+    return JSONResponse(
+        status_code=400,
+        content={"success": False, "detail": f"Bad Request: {error_msg}"}
+    )
+
+@app.exception_handler(ServiceUnavailableError)
+async def service_unavailable_handler(request: Request, exc: ServiceUnavailableError):
+    """Return 503 Service Unavailable for failed external dependencies."""
+    logger.error("service_unavailable", path=request.url.path, error=str(exc))
+    return JSONResponse(
+        status_code=503,
+        content={
+            "success": False,
+            "detail": "Service busy, please retry later.",
+            "error_type": "ServiceUnavailableError",
         },
     )
 
@@ -231,6 +260,8 @@ _all_routers = [
     (notes_router, "/api/v1"),
     (export_router, "/api/v1"),
     (proctoring_detail_router, "/api/v1"),
+    (leetcode_router, "/api/v1"),
+    (verbal_router, "/api/v1"),
 ]
 
 for router, prefix in _all_routers:
@@ -239,7 +270,7 @@ for router, prefix in _all_routers:
             app.include_router(router, prefix=prefix) if prefix else app.include_router(router)
             _loaded_routers.append(router)
         except Exception as e:
-            print(f"⚠️  Failed to register router: {e}")
+            print(f"[WARNING] Failed to register router: {e}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -265,9 +296,9 @@ async def root():
 if __name__ == "__main__":
     import uvicorn
 
-    print("🚀 Starting AI Interview Assistant Backend v2.1 (Resilient)...")
-    print(f"   → Running at: http://{settings.BACKEND_HOST}:{settings.BACKEND_PORT}")
-    print(f"   → API Docs: http://localhost:{settings.BACKEND_PORT}/docs")
+    print("[System] Starting AI Interview Assistant Backend v2.1 (Resilient)...")
+    print(f"   -> Running at: http://{settings.BACKEND_HOST}:{settings.BACKEND_PORT}")
+    print(f"   -> API Docs: http://localhost:{settings.BACKEND_PORT}/docs")
 
     uvicorn.run(
         "backend.main:app",

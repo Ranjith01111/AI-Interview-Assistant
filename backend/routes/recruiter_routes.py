@@ -10,13 +10,15 @@ Register in main.py:
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, desc, asc, or_, cast, String
+from sqlalchemy.orm import joinedload
+from pydantic import BaseModel
 from typing import Optional
 import re as re_module
 
 from backend.db.session import get_db
 from backend.models.interview import InterviewSession
-from backend.core.security import get_current_active_user, require_role
 from backend.models.user import User, UserRole
+from backend.core.security import get_current_active_user, require_role
 from backend.core.logging import get_logger
 
 logger = get_logger("backend.routes.recruiter")
@@ -28,6 +30,8 @@ router = APIRouter(
 )
 
 
+from datetime import datetime, timedelta
+
 @router.get("/candidates")
 async def get_candidates(
     db: AsyncSession = Depends(get_db),
@@ -38,35 +42,38 @@ async def get_candidates(
     min_score: Optional[float] = Query(None, ge=0, le=10, description="Minimum average score"),
     max_score: Optional[float] = Query(None, ge=0, le=10, description="Maximum average score"),
     skills: Optional[str] = Query(None, description="Comma-separated skills filter"),
+    date_range: Optional[str] = Query(None, description="Date filter: today, week, month, all"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
 ):
     """
-    Get paginated list of candidates with search, sort, and filter support.
-
-    Returns:
-        {candidates: [...], total_count, page, page_size, total_pages}
-
-    Each candidate item contains:
-        session_id, candidate_name, email, skills_detected, experience_years,
-        average_score, status, recommendation, question_count, violations_count,
-        created_at, pipeline_stage
+    Get paginated list of candidates with their nested interview sessions.
+    The response groups multiple sessions for the same candidate.
     """
     try:
-        # Base query
-        query = select(InterviewSession)
+        query = select(InterviewSession).outerjoin(
+            User, InterviewSession.user_id == User.id
+        ).options(joinedload(InterviewSession.user))
 
-        # ── Search filter (name or email pattern in resume_text) ──
         if search:
             search_term = f"%{search.strip()}%"
             query = query.where(
                 or_(
                     InterviewSession.candidate_name.ilike(search_term),
-                    InterviewSession.resume_text.ilike(search_term),
+                    User.email.ilike(search_term),
+                    User.name.ilike(search_term),
                 )
             )
 
-        # ── Status filter ──
+        if date_range and date_range != "all":
+            now = datetime.utcnow()
+            if date_range == "today":
+                query = query.where(InterviewSession.created_at >= now - timedelta(days=1))
+            elif date_range == "week":
+                query = query.where(InterviewSession.created_at >= now - timedelta(days=7))
+            elif date_range == "month":
+                query = query.where(InterviewSession.created_at >= now - timedelta(days=30))
+
         if status:
             status_map = {
                 "completed": "completed",
@@ -75,16 +82,44 @@ async def get_candidates(
                 "created": "created",
                 "questions_generated": "questions_generated",
             }
-            db_status = status_map.get(status.lower(), status.lower())
-            query = query.where(InterviewSession.status == db_status)
+            status_lower = status.lower()
 
-        # ── Score range filter ──
+            if status_lower == "decision":
+                query = query.where(InterviewSession.status == "completed")
+                query = query.where(InterviewSession.recommendation.isnot(None))
+                query = query.where(InterviewSession.recommendation.in_([
+                    "Strong Hire", "Hire", "Maybe", "Maybe — needs improvement", "No Hire", "Decision"
+                ]))
+            elif status_lower == "strong_hire":
+                query = query.where(InterviewSession.status == "completed")
+                query = query.where(InterviewSession.recommendation == "Strong Hire")
+            elif status_lower == "hire":
+                query = query.where(InterviewSession.status == "completed")
+                query = query.where(InterviewSession.recommendation == "Hire")
+            elif status_lower == "maybe":
+                query = query.where(InterviewSession.status == "completed")
+                query = query.where(InterviewSession.recommendation.in_(["Maybe", "Maybe — needs improvement"]))
+            elif status_lower == "no_hire":
+                query = query.where(InterviewSession.status == "completed")
+                query = query.where(InterviewSession.recommendation == "No Hire")
+            elif status_lower == "evaluation":
+                query = query.where(InterviewSession.status == "completed")
+                query = query.where(
+                    or_(
+                        InterviewSession.recommendation.is_(None),
+                        InterviewSession.recommendation == "Evaluation",
+                        InterviewSession.average_score.is_(None)
+                    )
+                )
+            else:
+                db_status = status_map.get(status_lower, status_lower)
+                query = query.where(InterviewSession.status == db_status)
+
         if min_score is not None:
             query = query.where(InterviewSession.average_score >= min_score)
         if max_score is not None:
             query = query.where(InterviewSession.average_score <= max_score)
 
-        # ── Skills filter (comma-separated, match ANY) ──
         if skills:
             skills_list = [s.strip().lower() for s in skills.split(",") if s.strip()]
             if skills_list:
@@ -96,38 +131,22 @@ async def get_candidates(
                 if skill_conditions:
                     query = query.where(or_(*skill_conditions))
 
-        # ── Count total before pagination ──
-        count_query = select(func.count()).select_from(query.subquery())
-        count_result = await db.execute(count_query)
-        total_count = count_result.scalar() or 0
+        query = query.order_by(desc(InterviewSession.created_at))
 
-        # ── Sorting ──
-        sort_column_map = {
-            "score": InterviewSession.average_score,
-            "date": InterviewSession.created_at,
-            "name": InterviewSession.candidate_name,
-        }
-        sort_col = sort_column_map.get(sort_by, InterviewSession.created_at)
-
-        if sort_order == "asc":
-            query = query.order_by(asc(sort_col))
-        else:
-            query = query.order_by(desc(sort_col))
-
-        # ── Pagination ──
-        offset = (page - 1) * page_size
-        query = query.offset(offset).limit(page_size)
-
-        # ── Execute ──
         result = await db.execute(query)
-        sessions = result.scalars().all()
+        sessions = result.unique().scalars().all()
 
-        # ── Build response ──
-        candidates = []
+        grouped = {}
         for session in sessions:
-            email = _extract_email(session.resume_text) if session.resume_text else None
+            email = None
+            if session.user:
+                email = session.user.email
+            if not email:
+                email = _extract_email(session.resume_text) if session.resume_text else None
+            
+            key = email.lower() if email else (session.candidate_name or "Unknown").lower()
+            
             pipeline_stage = _determine_pipeline_stage(session)
-
             violations_count = 0
             try:
                 violations_count = len(session.proctor_logs) if session.proctor_logs else 0
@@ -140,26 +159,63 @@ async def get_candidates(
             except Exception:
                 pass
 
-            candidates.append({
+            avg_score = None
+            if session.average_score is not None:
+                avg_score = round(float(session.average_score), 2)
+
+            session_data = {
                 "session_id": str(session.id),
-                "candidate_name": session.candidate_name or "Unknown",
-                "email": email,
                 "skills_detected": session.skills_detected or [],
                 "experience_years": session.experience_years or "Not specified",
-                "average_score": round(float(session.average_score), 2) if session.average_score else None,
+                "average_score": avg_score,
                 "status": session.status,
                 "recommendation": session.recommendation,
                 "question_count": question_count,
                 "violations_count": violations_count,
                 "created_at": session.created_at.isoformat() if session.created_at else None,
                 "pipeline_stage": pipeline_stage,
-            })
+            }
 
+            if key not in grouped:
+                grouped[key] = {
+                    "candidate_name": session.candidate_name or "Unknown",
+                    "email": email,
+                    "sessions": [],
+                    "total_sessions": 0,
+                    "latest_date": session.created_at,
+                    "highest_score": avg_score or 0.0,
+                    "total_violations": 0
+                }
+            
+            grouped[key]["sessions"].append(session_data)
+            grouped[key]["total_sessions"] += 1
+            if session.created_at and (not grouped[key]["latest_date"] or session.created_at > grouped[key]["latest_date"]):
+                grouped[key]["latest_date"] = session.created_at
+            if avg_score and avg_score > grouped[key]["highest_score"]:
+                grouped[key]["highest_score"] = avg_score
+            grouped[key]["total_violations"] += violations_count
+            
+        candidate_list = list(grouped.values())
+
+        if sort_by == "score":
+            candidate_list.sort(key=lambda x: x["highest_score"], reverse=(sort_order == "desc"))
+        elif sort_by == "name":
+            candidate_list.sort(key=lambda x: (x["candidate_name"] or "").lower(), reverse=(sort_order == "desc"))
+        else:
+            # default to date
+            candidate_list.sort(key=lambda x: x["latest_date"] or datetime.min, reverse=(sort_order == "desc"))
+
+        for c in candidate_list:
+            c["latest_date"] = c["latest_date"].isoformat() if c["latest_date"] else None
+
+        total_count = len(candidate_list)
         total_pages = max(1, (total_count + page_size - 1) // page_size)
+        offset = (page - 1) * page_size
+        paginated_candidates = candidate_list[offset:offset + page_size]
 
         return {
             "success": True,
-            "candidates": candidates,
+            "candidates": paginated_candidates,
             "total_count": total_count,
             "page": page,
             "page_size": page_size,
@@ -168,6 +224,8 @@ async def get_candidates(
 
     except Exception as e:
         logger.error("recruiter_candidates_error", error=str(e))
+        import traceback
+        logger.error("recruiter_candidates_traceback", tb=traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Failed to fetch candidates: {str(e)}")
 
 
@@ -219,18 +277,31 @@ async def get_candidate_detail(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid session ID format")
 
-    query = select(InterviewSession).where(InterviewSession.id == sid)
+    query = select(InterviewSession).where(
+        InterviewSession.id == sid
+    ).options(joinedload(InterviewSession.user))
     result = await db.execute(query)
-    session = result.scalars().first()
+    session = result.unique().scalars().first()
 
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    email = _extract_email(session.resume_text) if session.resume_text else None
+    # Get email from User relationship
+    email = None
+    if session.user:
+        email = session.user.email
+    if not email:
+        email = _extract_email(session.resume_text) if session.resume_text else None
+
     pipeline_stage = _determine_pipeline_stage(session)
 
     violations_count = len(session.proctor_logs) if session.proctor_logs else 0
     question_count = len(session.questions) if session.questions else 0
+
+    # FIX: Proper None check for 0.0 scores
+    avg_score = None
+    if session.average_score is not None:
+        avg_score = round(float(session.average_score), 2)
 
     return {
         "success": True,
@@ -240,7 +311,7 @@ async def get_candidate_detail(
             "email": email,
             "skills_detected": session.skills_detected or [],
             "experience_years": session.experience_years or "Not specified",
-            "average_score": round(float(session.average_score), 2) if session.average_score else None,
+            "average_score": avg_score,
             "status": session.status,
             "recommendation": session.recommendation,
             "overall_feedback": session.overall_feedback,
@@ -257,7 +328,7 @@ async def get_candidate_detail(
 # ══════════════════════════════════════════════════════════════════════════════════
 
 def _extract_email(text: str) -> Optional[str]:
-    """Extract the first email address found in resume text."""
+    """Extract the first email address found in resume text (fallback only)."""
     if not text:
         return None
     match = re_module.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', text)
@@ -290,3 +361,50 @@ def _determine_pipeline_stage(session: InterviewSession) -> str:
         else:
             return "evaluation"
     return "screening"
+
+
+# ── Update candidate decision/recommendation ──────────────────────────────────
+
+class UpdateDecisionRequest(BaseModel):
+    recommendation: str
+
+
+@router.put("/candidates/{session_id}/decision")
+async def update_candidate_decision(
+    session_id: str,
+    request: UpdateDecisionRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Update the recommendation/decision for a candidate session.
+    Recruiters can change: Strong Hire, Hire, Maybe, No Hire, Evaluation, Decision.
+    """
+    try:
+        import uuid as uuid_mod
+        sid = uuid_mod.UUID(session_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid session ID format")
+
+    result = await db.execute(
+        select(InterviewSession).where(InterviewSession.id == sid)
+    )
+    session = result.scalar_one_or_none()
+
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Validate recommendation value
+    valid_decisions = ["Strong Hire", "Hire", "Maybe", "Maybe — needs improvement", "No Hire", "Evaluation", "Decision"]
+    if request.recommendation not in valid_decisions:
+        raise HTTPException(status_code=400, detail=f"Invalid decision. Must be one of: {valid_decisions}")
+
+    session.recommendation = request.recommendation
+    await db.commit()
+
+    logger.info("decision_updated", session_id=session_id, new_decision=request.recommendation)
+
+    return {
+        "success": True,
+        "session_id": session_id,
+        "recommendation": request.recommendation,
+    }

@@ -62,7 +62,7 @@ def solve():
 if __name__ == '__main__':
     solve()
 """,
-            "javascript": """const lines = require('fs').readFileSync('/dev/stdin','utf8').trim().split('\\n');
+            "javascript": """const lines = require('fs').readFileSync(0,'utf8').trim().split('\\n');
 const target = parseInt(lines[0]);
 const nums = lines[1].split(' ').map(Number);
 
@@ -172,7 +172,7 @@ def solve():
 if __name__ == '__main__':
     solve()
 """,
-            "javascript": """const s = require('fs').readFileSync('/dev/stdin','utf8').trim();
+            "javascript": """const s = require('fs').readFileSync(0,'utf8').trim();
 
 // Your solution here
 // Check if s is a palindrome (alphanumeric only, case-insensitive)
@@ -282,7 +282,7 @@ def solve():
 if __name__ == '__main__':
     solve()
 """,
-            "javascript": """const lines = require('fs').readFileSync('/dev/stdin','utf8').trim().split('\\n');
+            "javascript": """const lines = require('fs').readFileSync(0,'utf8').trim().split('\\n');
 const n = parseInt(lines[0]);
 const nums = lines[1].split(' ').map(Number);
 
@@ -376,7 +376,7 @@ This challenge is designed for JavaScript. Use recursion or `Array.flat(Infinity
         "time_limit": 2.0,
         "memory_limit": 128,
         "template_code": {
-            "javascript": """const input = require('fs').readFileSync('/dev/stdin','utf8').trim();
+            "javascript": """const input = require('fs').readFileSync(0,'utf8').trim();
 const arr = JSON.parse(input);
 
 // Your solution here

@@ -212,9 +212,11 @@ async def deactivate_user(
             message="The user account is already deactivated."
         )
 
-    # Deactivate
+    # Deactivate and persist to database
     target_user.is_active = False
     db.add(target_user)
+    await db.commit()
+    await db.refresh(target_user)
 
     # Log the administration deactivation event
     await log_audit_event(

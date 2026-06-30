@@ -4,6 +4,14 @@ import { Toast } from '../../components/Toast.js';
 import { navigate } from '../../main.js';
 
 export async function renderStep5(container, state) {
+  // Explicitly ensure fullscreen is exited when arriving at the summary
+  if (document.fullscreenElement || document.webkitFullscreenElement) {
+    try {
+      if (document.exitFullscreen) await document.exitFullscreen();
+      else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
+    } catch (e) {}
+  }
+
   container.innerHTML = `
     <div class="step-container slide-up">
       <div id="summary-loading" style="text-align:center;padding:var(--spacing-2xl)">
@@ -29,9 +37,17 @@ export async function renderStep5(container, state) {
 
 function renderSummary(el, data, state) {
   const interviewScore = state.interviewScore ?? data.average_score ?? 0;
-  const codingScoreRaw = state.codingScore ?? 0; // out of 100
+  
+  const codingEntries = data.coding_submissions || [];
+  let codingScoreRaw = state.codingScore;
+  if (codingScoreRaw === undefined || codingScoreRaw === null) {
+    codingScoreRaw = codingEntries.length 
+      ? Math.round(codingEntries.reduce((acc, curr) => acc + curr.score, 0) / codingEntries.length)
+      : 0;
+  }
+  
   const codingScore10 = codingScoreRaw / 10; // convert to /10 scale
-  const hasCoding = state.codingScore !== undefined && state.codingScore !== null;
+  const hasCoding = true; // Coding is now always part of the mandatory flow
 
   // Weights
   const iWeight = hasCoding ? 60 : 100;
@@ -44,7 +60,6 @@ function renderSummary(el, data, state) {
   const ringColor = isPass ? '#10b981' : finalScore >= 5 ? '#f59e0b' : '#ef4444';
   const circum = 2 * Math.PI * 54;
 
-  const codingEntries = data.coding_submissions || [];
 
   el.style.display = '';
   el.innerHTML = `
